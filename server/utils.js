@@ -4,9 +4,9 @@ const axios = require('axios');
 // The connection string will be provided by Zeabur as an environment variable
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false
-  }
+  // The error "The server does not support SSL connections" indicates we should disable it
+  // for Zeabur's internal network.
+  ssl: false
 });
 
 const tokenCache = {};
