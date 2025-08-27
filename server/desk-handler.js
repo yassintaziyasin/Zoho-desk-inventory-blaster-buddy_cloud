@@ -30,7 +30,7 @@ const handleSendSingleTicket = async (data) => {
     if (!email || !selectedProfileName) {
         return { success: false, error: 'Missing email or profile.' };
     }
-    const profiles = readProfiles();
+    const profiles = await readProfiles();
     const activeProfile = profiles.find(p => p.profileName === selectedProfileName);
 
     try {
@@ -51,7 +51,7 @@ const handleSendSingleTicket = async (data) => {
         const newTicket = ticketResponse.data;
         let fullResponseData = { ticketCreate: newTicket };
 
-        writeToTicketLog({ ticketNumber: newTicket.ticketNumber, email });
+        await writeToTicketLog({ ticketNumber: newTicket.ticketNumber, email });
 
         if (sendDirectReply) {
             try {
@@ -82,12 +82,11 @@ const handleVerifyTicketEmail = async (data) => {
     if (!ticket || !profileName) {
         return { success: false, details: 'Missing ticket or profile information for verification.' };
     }
-    const profiles = readProfiles();
+    const profiles = await readProfiles();
     const activeProfile = profiles.find(p => p.profileName === profileName);
     if (!activeProfile) {
         return { success: false, details: 'Profile not found for verification.' };
     }
-    // Pass null for the socket parameter since this is an HTTP request
     return await verifyTicketEmail(null, { ticket, profile: activeProfile });
 };
 
@@ -116,7 +115,7 @@ const handleSendTestTicket = async (socket, data) => {
         const newTicket = ticketResponse.data;
         let fullResponseData = { ticketCreate: newTicket };
 
-        writeToTicketLog({ ticketNumber: newTicket.ticketNumber, email });
+        await writeToTicketLog({ ticketNumber: newTicket.ticketNumber, email });
 
         if (sendDirectReply) {
             try {
@@ -189,7 +188,7 @@ const handleStartBulkCreate = async (socket, data) => {
                 let fullResponseData = { ticketCreate: newTicket };
                 let overallSuccess = true; 
 
-                writeToTicketLog({ ticketNumber: newTicket.ticketNumber, email });
+                await writeToTicketLog({ ticketNumber: newTicket.ticketNumber, email });
 
                 if (sendDirectReply) {
                     try {
@@ -319,7 +318,7 @@ const handleGetEmailFailures = async (socket, data) => {
         const response = await makeApiCall('get', `/api/v1/emailFailureAlerts?department=${departmentId}&limit=50`, null, activeProfile, 'desk');
         
         const failures = response.data.data || [];
-        const ticketLog = readTicketLog();
+        const ticketLog = await readTicketLog();
         const failuresWithEmails = failures.map(failure => {
             const logEntry = ticketLog.find(entry => String(entry.ticketNumber) === String(failure.ticketNumber));
             return {

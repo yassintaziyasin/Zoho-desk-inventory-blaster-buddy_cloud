@@ -1,51 +1,88 @@
-const fs = require('fs');
-const path = require('path');
+const { Pool } = require('pg');
 const axios = require('axios');
 
-const PROFILES_PATH = path.join(__dirname, 'profiles.json');
-const TICKET_LOG_PATH = path.join(__dirname, 'ticket-log.json');
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
+  }
+});
+
 const tokenCache = {};
 
-const readProfiles = () => {
-    try {
-        if (fs.existsSync(PROFILES_PATH)) {
-            const data = fs.readFileSync(PROFILES_PATH);
-            return JSON.parse(data);
-        }
-    } catch (error) {
-        console.error('[ERROR] Could not read profiles.json:', error);
-    }
-    return [];
+const query = async (text, params) => {
+  const start = Date.now();
+  const res = await pool.query(text, params);
+  const duration = Date.now() - start;
+  console.log('executed query', { text, duration, rows: res.rowCount });
+  return res;
 };
 
-const writeProfiles = (profiles) => {
-    try {
-        fs.writeFileSync(PROFILES_PATH, JSON.stringify(profiles, null, 2));
-    } catch (error) {
-        console.error('[ERROR] Could not write to profiles.json:', error);
-    }
+const createTables = async () => {
+  const createProfilesTable = `
+    CREATE TABLE IF NOT EXISTS profiles (
+      id SERIAL PRIMARY KEY,
+      profileName VARCHAR(255) UNIQUE NOT NULL,
+      clientId VARCHAR(255) NOT NULL,
+      clientSecret VARCHAR(255) NOT NULL,
+      refreshToken TEXT NOT NULL,
+      desk JSONB,
+      inventory JSONB
+    );
+  `;
+  const createTicketLogTable = `
+    CREATE TABLE IF NOT EXISTS ticket_log (
+      id SERIAL PRIMARY KEY,
+      ticketNumber VARCHAR(255) NOT NULL,
+      email VARCHAR(255) NOT NULL,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+  `;
+  await query(createProfilesTable);
+  await query(createTicketLogTable);
 };
 
-const readTicketLog = () => {
-    try {
-        if (fs.existsSync(TICKET_LOG_PATH)) {
-            const data = fs.readFileSync(TICKET_LOG_PATH);
-            return JSON.parse(data);
-        }
-    } catch (error) {
-        console.error('[ERROR] Could not read ticket-log.json:', error);
-    }
-    return [];
+createTables().catch(console.error);
+
+const readProfiles = async () => {
+  const { rows } = await query('SELECT * FROM profiles');
+  return rows;
 };
 
-const writeToTicketLog = (newEntry) => {
-    const log = readTicketLog();
-    log.push(newEntry);
-    try {
-        fs.writeFileSync(TICKET_LOG_PATH, JSON.stringify(log, null, 2));
-    } catch (error) {
-        console.error('[ERROR] Could not write to ticket-log.json:', error);
-    }
+const writeProfiles = async (profiles) => {
+  // This function will now be used for updating or inserting profiles
+};
+
+const addProfile = async (profile) => {
+  const { profileName, clientId, clientSecret, refreshToken, desk, inventory } = profile;
+  const { rows } = await query(
+    'INSERT INTO profiles (profileName, clientId, clientSecret, refreshToken, desk, inventory) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+    [profileName, clientId, clientSecret, refreshToken, JSON.stringify(desk), JSON.stringify(inventory)]
+  );
+  return rows[0];
+};
+
+const updateProfile = async (profileNameToUpdate, updatedProfileData) => {
+  const { profileName, clientId, clientSecret, refreshToken, desk, inventory } = updatedProfileData;
+  const { rows } = await query(
+    'UPDATE profiles SET profileName = $1, clientId = $2, clientSecret = $3, refreshToken = $4, desk = $5, inventory = $6 WHERE profileName = $7 RETURNING *',
+    [profileName, clientId, clientSecret, refreshToken, JSON.stringify(desk), JSON.stringify(inventory), profileNameToUpdate]
+  );
+  return rows[0];
+};
+
+const readTicketLog = async () => {
+  const { rows } = await query('SELECT * FROM ticket_log ORDER BY created_at DESC');
+  return rows;
+};
+
+const writeToTicketLog = async (newEntry) => {
+  const { ticketNumber, email } = newEntry;
+  await query('INSERT INTO ticket_log (ticketNumber, email) VALUES ($1, $2)', [ticketNumber, email]);
+};
+
+const clearTicketLog = async () => {
+  await query('DELETE FROM ticket_log');
 };
 
 const createJobId = (socketId, profileName, jobType) => `${socketId}_${profileName}_${jobType}`;
@@ -157,9 +194,11 @@ const makeApiCall = async (method, relativeUrl, data, profile, service) => {
 
 module.exports = {
     readProfiles,
-    writeProfiles,
+    addProfile,
+    updateProfile,
     readTicketLog,
     writeToTicketLog,
+    clearTicketLog,
     createJobId,
     parseError,
     getValidAccessToken,
