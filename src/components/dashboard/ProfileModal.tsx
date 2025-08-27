@@ -17,7 +17,7 @@ interface ProfileModalProps {
   socket: Socket | null;
 }
 
-const SERVER_URL = "http://localhost:3000";
+const SERVER_URL = import.meta.env.PROD ? '' : "http://localhost:3000";
 
 // NEW: Define an initial empty state for the form
 const getInitialFormData = (): Profile => ({

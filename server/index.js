@@ -3,7 +3,7 @@ const http = require('http');
 const { Server } = require("socket.io");
 const cors = require('cors');
 const crypto = require('crypto');
-const path = require('path'); // <-- ADD THIS LINE
+const path = require('path');
 const { readProfiles, addProfile, updateProfile, parseError, getValidAccessToken, makeApiCall, createJobId } = require('./utils');
 const deskHandler = require('./desk-handler');
 const inventoryHandler = require('./inventory-handler');
@@ -11,10 +11,12 @@ require('dotenv').config();
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: process.env.CLIENT_URL || "http://localhost:8080" } });
-
 const port = process.env.PORT || 3000;
-const REDIRECT_URI = `http://localhost:${port}/api/zoho/callback`;
+
+// Determine the client origin from environment variables
+const clientOrigin = process.env.CLIENT_URL || "http://localhost:8080";
+const io = new Server(server, { cors: { origin: clientOrigin } });
+
 
 const activeJobs = {};
 deskHandler.setActiveJobs(activeJobs);
@@ -24,6 +26,8 @@ const authStates = {};
 
 app.use(cors());
 app.use(express.json());
+// Trust the proxy to get the correct protocol (https) from headers like X-Forwarded-Proto
+app.set('trust proxy', 1);
 
 // Serve the static files from the React app
 app.use(express.static(path.join(__dirname, '../dist')));
@@ -40,9 +44,14 @@ app.post('/api/zoho/auth', (req, res) => {
 
     setTimeout(() => delete authStates[state], 300000);
 
+    // Dynamically construct the REDIRECT_URI from the request headers
+    const protocol = req.protocol;
+    const host = req.get('host');
+    const REDIRECT_URI = `${protocol}://${host}/api/zoho/callback`;
+
     const combinedScopes = 'Desk.tickets.ALL,Desk.settings.ALL,Desk.basic.READ,ZohoInventory.contacts.ALL,ZohoInventory.invoices.ALL,ZohoInventory.settings.ALL,ZohoInventory.settings.UPDATE,ZohoInventory.settings.READ';
     const authUrl = `https://accounts.zoho.com/oauth/v2/auth?scope=${combinedScopes}&client_id=${clientId}&response_type=code&access_type=offline&redirect_uri=${REDIRECT_URI}&prompt=consent&state=${state}`;
-    
+
     res.json({ authUrl });
 });
 
@@ -53,6 +62,11 @@ app.get('/api/zoho/callback', async (req, res) => {
         return res.status(400).send('<h1>Error</h1><p>Invalid or expired session state. Please try generating the token again.</p>');
     }
     delete authStates[state];
+
+    // Also need to construct the REDIRECT_URI dynamically here for the token exchange
+    const protocol = req.protocol;
+    const host = req.get('host');
+    const REDIRECT_URI = `${protocol}://${host}/api/zoho/callback`;
 
     try {
         const tokenUrl = 'https://accounts.zoho.com/oauth/v2/token';
@@ -80,6 +94,7 @@ app.get('/api/zoho/callback', async (req, res) => {
         res.status(500).send(`<h1>Error</h1><p>Failed to get token: ${message}. Please close this window and try again.</p>`);
     }
 });
+
 
 // --- SINGLE TICKET AND INVOICE REST ENDPOINTS ---
 app.post('/api/tickets/single', async (req, res) => {
