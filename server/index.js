@@ -13,10 +13,9 @@ const app = express();
 const server = http.createServer(app);
 const port = process.env.PORT || 3000;
 
-// Determine the client origin from environment variables
+// Use an environment variable for the client's origin. Fallback to localhost for development.
 const clientOrigin = process.env.CLIENT_URL || "http://localhost:8080";
 const io = new Server(server, { cors: { origin: clientOrigin } });
-
 
 const activeJobs = {};
 deskHandler.setActiveJobs(activeJobs);
@@ -26,7 +25,7 @@ const authStates = {};
 
 app.use(cors());
 app.use(express.json());
-// Trust the proxy to get the correct protocol (https) from headers like X-Forwarded-Proto
+// This is crucial for correctly determining the protocol (https) when deployed behind a proxy like Zeabur.
 app.set('trust proxy', 1);
 
 // Serve the static files from the React app
@@ -44,7 +43,7 @@ app.post('/api/zoho/auth', (req, res) => {
 
     setTimeout(() => delete authStates[state], 300000);
 
-    // Dynamically construct the REDIRECT_URI from the request headers
+    // Dynamically construct the REDIRECT_URI from the incoming request's headers
     const protocol = req.protocol;
     const host = req.get('host');
     const REDIRECT_URI = `${protocol}://${host}/api/zoho/callback`;
@@ -63,7 +62,7 @@ app.get('/api/zoho/callback', async (req, res) => {
     }
     delete authStates[state];
 
-    // Also need to construct the REDIRECT_URI dynamically here for the token exchange
+    // Also construct the REDIRECT_URI dynamically here for the token exchange
     const protocol = req.protocol;
     const host = req.get('host');
     const REDIRECT_URI = `${protocol}://${host}/api/zoho/callback`;
@@ -76,7 +75,7 @@ app.get('/api/zoho/callback', async (req, res) => {
         params.append('client_secret', authData.clientSecret);
         params.append('redirect_uri', REDIRECT_URI);
         params.append('grant_type', 'authorization_code');
-        
+
         const axios = require('axios');
         const response = await axios.post(tokenUrl, params);
         const { refresh_token } = response.data;
@@ -94,7 +93,6 @@ app.get('/api/zoho/callback', async (req, res) => {
         res.status(500).send(`<h1>Error</h1><p>Failed to get token: ${message}. Please close this window and try again.</p>`);
     }
 });
-
 
 // --- SINGLE TICKET AND INVOICE REST ENDPOINTS ---
 app.post('/api/tickets/single', async (req, res) => {
@@ -180,7 +178,7 @@ io.on('connection', (socket) => {
             const profiles = await readProfiles();
             const activeProfile = profiles.find(p => p.profileName === selectedProfileName);
             if (!activeProfile) throw new Error("Profile not found");
-            
+
             const tokenResponse = await getValidAccessToken(activeProfile, service);
 
             let validationData = {};
@@ -191,9 +189,9 @@ io.on('connection', (socket) => {
                 const orgsResponse = await makeApiCall('get', '/v1/organizations', null, activeProfile, 'inventory');
                 const currentOrg = orgsResponse.data.organizations.find(org => org.organization_id === activeProfile.inventory.orgId);
                 if (!currentOrg) throw new Error('Inventory Organization ID is invalid or does not match this profile.');
-                validationData = { 
-                    orgName: currentOrg.name, 
-                    agentInfo: { firstName: currentOrg.contact_name, lastName: '' } 
+                validationData = {
+                    orgName: currentOrg.name,
+                    agentInfo: { firstName: currentOrg.contact_name, lastName: '' }
                 };
 
             } else { // Default to 'desk'
@@ -201,21 +199,21 @@ io.on('connection', (socket) => {
                     throw new Error('Desk Organization ID is not configured for this profile.');
                 }
                 const agentResponse = await makeApiCall('get', '/api/v1/myinfo', null, activeProfile, 'desk');
-                 validationData = { 
+                 validationData = {
                     agentInfo: agentResponse.data,
-                    orgName: agentResponse.data.orgName 
+                    orgName: agentResponse.data.orgName
                 };
             }
 
-            socket.emit('apiStatusResult', { 
-                success: true, 
+            socket.emit('apiStatusResult', {
+                success: true,
                 message: `Connection to Zoho ${service.charAt(0).toUpperCase() + service.slice(1)} API is successful.`,
                 fullResponse: { ...tokenResponse, ...validationData }
             });
         } catch (error) {
             const { message, fullResponse } = parseError(error);
-            socket.emit('apiStatusResult', { 
-                success: false, 
+            socket.emit('apiStatusResult', {
+                success: false,
                 message: `Connection failed: ${message}`,
                 fullResponse: fullResponse
             });
