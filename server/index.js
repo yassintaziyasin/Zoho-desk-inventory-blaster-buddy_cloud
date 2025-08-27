@@ -3,6 +3,7 @@ const http = require('http');
 const { Server } = require("socket.io");
 const cors = require('cors');
 const crypto = require('crypto');
+const path = require('path'); // <-- ADD THIS LINE
 const { readProfiles, addProfile, updateProfile, parseError, getValidAccessToken, makeApiCall, createJobId } = require('./utils');
 const deskHandler = require('./desk-handler');
 const inventoryHandler = require('./inventory-handler');
@@ -23,6 +24,9 @@ const authStates = {};
 
 app.use(cors());
 app.use(express.json());
+
+// Serve the static files from the React app
+app.use(express.static(path.join(__dirname, '../dist')));
 
 // --- ZOHO AUTH FLOW ---
 app.post('/api/zoho/auth', (req, res) => {
@@ -260,6 +264,10 @@ io.on('connection', (socket) => {
     }
 });
 
+// Handles any requests that don't match the ones above
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../dist/index.html'));
+});
 
 server.listen(port, () => {
     console.log(`🚀 Server is running on http://localhost:${port}`);
