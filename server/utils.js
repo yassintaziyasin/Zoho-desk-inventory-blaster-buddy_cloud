@@ -1,6 +1,7 @@
 const { Pool } = require('pg');
 const axios = require('axios');
 
+// The connection string will be provided by Zeabur as an environment variable
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: {
@@ -18,14 +19,15 @@ const query = async (text, params) => {
   return res;
 };
 
+// This function will create the necessary tables if they don't exist
 const createTables = async () => {
   const createProfilesTable = `
     CREATE TABLE IF NOT EXISTS profiles (
       id SERIAL PRIMARY KEY,
-      profileName VARCHAR(255) UNIQUE NOT NULL,
-      clientId VARCHAR(255) NOT NULL,
-      clientSecret VARCHAR(255) NOT NULL,
-      refreshToken TEXT NOT NULL,
+      "profileName" VARCHAR(255) UNIQUE NOT NULL,
+      "clientId" VARCHAR(255) NOT NULL,
+      "clientSecret" VARCHAR(255) NOT NULL,
+      "refreshToken" TEXT NOT NULL,
       desk JSONB,
       inventory JSONB
     );
@@ -33,7 +35,7 @@ const createTables = async () => {
   const createTicketLogTable = `
     CREATE TABLE IF NOT EXISTS ticket_log (
       id SERIAL PRIMARY KEY,
-      ticketNumber VARCHAR(255) NOT NULL,
+      "ticketNumber" VARCHAR(255) NOT NULL,
       email VARCHAR(255) NOT NULL,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
@@ -42,6 +44,7 @@ const createTables = async () => {
   await query(createTicketLogTable);
 };
 
+// Initialize the database tables when the server starts
 createTables().catch(console.error);
 
 const readProfiles = async () => {
@@ -49,14 +52,10 @@ const readProfiles = async () => {
   return rows;
 };
 
-const writeProfiles = async (profiles) => {
-  // This function will now be used for updating or inserting profiles
-};
-
 const addProfile = async (profile) => {
   const { profileName, clientId, clientSecret, refreshToken, desk, inventory } = profile;
   const { rows } = await query(
-    'INSERT INTO profiles (profileName, clientId, clientSecret, refreshToken, desk, inventory) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+    'INSERT INTO profiles ("profileName", "clientId", "clientSecret", "refreshToken", desk, inventory) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
     [profileName, clientId, clientSecret, refreshToken, JSON.stringify(desk), JSON.stringify(inventory)]
   );
   return rows[0];
@@ -65,7 +64,7 @@ const addProfile = async (profile) => {
 const updateProfile = async (profileNameToUpdate, updatedProfileData) => {
   const { profileName, clientId, clientSecret, refreshToken, desk, inventory } = updatedProfileData;
   const { rows } = await query(
-    'UPDATE profiles SET profileName = $1, clientId = $2, clientSecret = $3, refreshToken = $4, desk = $5, inventory = $6 WHERE profileName = $7 RETURNING *',
+    'UPDATE profiles SET "profileName" = $1, "clientId" = $2, "clientSecret" = $3, "refreshToken" = $4, desk = $5, inventory = $6 WHERE "profileName" = $7 RETURNING *',
     [profileName, clientId, clientSecret, refreshToken, JSON.stringify(desk), JSON.stringify(inventory), profileNameToUpdate]
   );
   return rows[0];
@@ -78,7 +77,7 @@ const readTicketLog = async () => {
 
 const writeToTicketLog = async (newEntry) => {
   const { ticketNumber, email } = newEntry;
-  await query('INSERT INTO ticket_log (ticketNumber, email) VALUES ($1, $2)', [ticketNumber, email]);
+  await query('INSERT INTO ticket_log ("ticketNumber", email) VALUES ($1, $2)', [ticketNumber, email]);
 };
 
 const clearTicketLog = async () => {

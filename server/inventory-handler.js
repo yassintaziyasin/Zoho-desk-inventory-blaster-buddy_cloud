@@ -307,7 +307,7 @@ const handleSendSingleInvoice = async (data) => {
     if (!email || !subject || !body || !selectedProfileName) {
         return { success: false, error: 'Missing required fields.' };
     }
-    const profiles = readProfiles();
+    const profiles = await readProfiles();
     const activeProfile = profiles.find(p => p.profileName === selectedProfileName);
     
     if (!activeProfile || !activeProfile.inventory) {

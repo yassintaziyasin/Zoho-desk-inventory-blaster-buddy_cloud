@@ -87,6 +87,7 @@ const handleVerifyTicketEmail = async (data) => {
     if (!activeProfile) {
         return { success: false, details: 'Profile not found for verification.' };
     }
+    // Pass null for the socket parameter since this is an HTTP request
     return await verifyTicketEmail(null, { ticket, profile: activeProfile });
 };
 
