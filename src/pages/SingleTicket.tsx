@@ -41,7 +41,7 @@ interface SingleTicketProps {
     onEditProfile: (profile: Profile) => void;
 }
 
-const SERVER_URL = "http://localhost:3000";
+const SERVER_URL = import.meta.env.PROD ? '' : "http://localhost:3000";
 let socket: Socket;
 
 // New component for the Image Insertion Dialog
