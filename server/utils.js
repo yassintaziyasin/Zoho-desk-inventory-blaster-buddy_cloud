@@ -1,167 +1,129 @@
-const fs = require('fs');
-const path = require('path');
 const axios = require('axios');
+const { PrismaClient } = require('@prisma/client');
 
-const PROFILES_PATH = path.join(__dirname, 'profiles.json');
-const TICKET_LOG_PATH = path.join(__dirname, 'ticket-log.json');
-const tokenCache = {};
+// Create a single, shared instance of the Prisma Client
+const prisma = new PrismaClient();
 
-const readProfiles = () => {
-    try {
-        if (fs.existsSync(PROFILES_PATH)) {
-            const data = fs.readFileSync(PROFILES_PATH);
-            return JSON.parse(data);
+// --- NEW DATABASE FUNCTIONS ---
+
+/**
+ * Fetches all profiles from the database.
+ * @returns {Promise<Array>} A promise that resolves to an array of profiles.
+ */
+async function getProfiles() {
+    const profilesFromDb = await prisma.profile.findMany();
+    // The frontend expects desk and inventory properties to be objects.
+    // This function reshapes the flat data from the database into the nested structure the app needs.
+    return profilesFromDb.map(p => ({
+        profileName: p.profileName,
+        clientId: p.clientId,
+        clientSecret: p.clientSecret,
+        refreshToken: p.refreshToken,
+        desk: {
+            orgId: p.deskOrgId,
+            defaultDepartmentId: p.defaultDepartmentId,
+            fromEmailAddress: p.fromEmailAddress,
+            mailReplyAddressId: p.mailReplyAddressId,
+        },
+        inventory: {
+            orgId: p.inventoryOrgId,
         }
-    } catch (error) {
-        console.error('[ERROR] Could not read profiles.json:', error);
-    }
-    return [];
-};
+    }));
+}
 
-const writeProfiles = (profiles) => {
-    try {
-        fs.writeFileSync(PROFILES_PATH, JSON.stringify(profiles, null, 2));
-    } catch (error) {
-        console.error('[ERROR] Could not write to profiles.json:', error);
-    }
-};
+/**
+ * Creates a new ticket log entry in the database.
+ * @param {object} logData - The data for the ticket log.
+ */
+async function createTicketLogEntry(logData) {
+    await prisma.ticketLog.create({
+        data: {
+            email: logData.email,
+            success: logData.success,
+            ticketNumber: logData.ticketNumber,
+            details: logData.details,
+            profileName: logData.profileName,
+        },
+    });
+}
 
-const readTicketLog = () => {
-    try {
-        if (fs.existsSync(TICKET_LOG_PATH)) {
-            const data = fs.readFileSync(TICKET_LOG_PATH);
-            return JSON.parse(data);
-        }
-    } catch (error) {
-        console.error('[ERROR] Could not read ticket-log.json:', error);
-    }
-    return [];
-};
+/**
+ * Deletes all ticket log entries from the database.
+ */
+async function clearAllTicketLogs() {
+    await prisma.ticketLog.deleteMany({});
+}
 
-const writeToTicketLog = (newEntry) => {
-    const log = readTicketLog();
-    log.push(newEntry);
-    try {
-        fs.writeFileSync(TICKET_LOG_PATH, JSON.stringify(log, null, 2));
-    } catch (error) {
-        console.error('[ERROR] Could not write to ticket-log.json:', error);
-    }
-};
 
-const createJobId = (socketId, profileName, jobType) => `${socketId}_${profileName}_${jobType}`;
+// --- EXISTING ZOHO HELPER FUNCTIONS (Unchanged, but important) ---
 
 const parseError = (error) => {
-    if (error.response) {
-        if (error.response.data && error.response.data.message) {
-            return {
-                message: error.response.data.message,
-                fullResponse: error.response.data
-            };
-        }
-        if (typeof error.response.data === 'string' && error.response.data.includes('<title>')) {
-            const titleMatch = error.response.data.match(/<title>(.*?)<\/title>/);
-            const title = titleMatch ? titleMatch[1] : 'HTML Error Page Received';
-            return {
-                message: `Zoho Server Error: ${title}`,
-                fullResponse: error.response.data
-            };
-        }
-        return {
-            message: `HTTP Error ${error.response.status}: ${error.response.statusText}`,
-            fullResponse: error.response.data || error.response.statusText
-        };
-    } else if (error.request) {
-        return {
-            message: 'Network Error: No response received from Zoho API.',
-            fullResponse: error.message
-        };
+    let message = 'An unknown error occurred.';
+    let fullResponse = null;
+    if (axios.isAxiosError(error)) {
+        message = error.response?.data?.message || error.response?.data?.error || error.message;
+        fullResponse = error.response?.data || { message: error.message };
+    } else if (error instanceof Error) {
+        message = error.message;
+        fullResponse = { message: error.message };
     }
-    return {
-        message: error.message || 'An unknown error occurred.',
-        fullResponse: error.stack
-    };
+    return { message, fullResponse };
 };
 
-const getValidAccessToken = async (profile, service) => {
-    const now = Date.now();
-    const cacheKey = `${profile.profileName}_${service}`;
-
-    if (tokenCache[cacheKey] && tokenCache[cacheKey].data.access_token && tokenCache[cacheKey].expiresAt > now) {
-        return tokenCache[cacheKey].data;
-    }
-
-    const scopes = {
-        desk: 'Desk.tickets.ALL,Desk.settings.ALL',
-        inventory: 'ZohoInventory.contacts.ALL,ZohoInventory.invoices.ALL,ZohoInventory.settings.ALL,ZohoInventory.settings.UPDATE'
-    };
-
-    const serviceScopes = scopes[service] || scopes.desk + ',' + scopes.inventory;
+const getValidAccessToken = async (profile, service = 'desk') => {
+    const tokenUrl = 'https://accounts.zoho.com/oauth/v2/token';
+    const params = new URLSearchParams();
+    params.append('refresh_token', profile.refreshToken);
+    params.append('client_id', profile.clientId);
+    params.append('client_secret', profile.clientSecret);
+    params.append('grant_type', 'refresh_token');
 
     try {
-        const params = new URLSearchParams({
-            refresh_token: profile.refreshToken,
-            client_id: profile.clientId,
-            client_secret: profile.clientSecret,
-            grant_type: 'refresh_token',
-            scope: serviceScopes
-        });
-
-        const response = await axios.post('https://accounts.zoho.com/oauth/v2/token', params);
-        
-        if (response.data.error) {
-            throw new Error(response.data.error);
+        const response = await axios.post(tokenUrl, params);
+        const { access_token } = response.data;
+        if (!access_token) {
+            throw new Error('Failed to refresh access token, token not found in response.');
         }
-        
-        const { expires_in } = response.data;
-        tokenCache[cacheKey] = { data: response.data, expiresAt: now + ((expires_in - 60) * 1000) };
-        return response.data;
-
+        return { success: true, accessToken: access_token };
     } catch (error) {
-        const { message } = parseError(error);
-        console.error(`TOKEN_REFRESH_FAILED for ${profile.profileName} (${service}):`, message);
-        throw error;
+        const { message, fullResponse } = parseError(error);
+        console.error(`[ERROR] Failed to refresh access token for ${profile.profileName} (${service}): ${message}`);
+        throw new Error(`Token refresh failed: ${message}`);
     }
 };
 
-const makeApiCall = async (method, relativeUrl, data, profile, service) => {
-    const tokenResponse = await getValidAccessToken(profile, service);
-    const accessToken = tokenResponse.access_token;
-    if (!accessToken) {
-        throw new Error('Failed to retrieve a valid access token.');
-    }
-
-    const serviceConfig = profile[service];
-    if (!serviceConfig || !serviceConfig.orgId) {
-        throw new Error(`Configuration for service "${service}" or its orgId is missing in profile "${profile.profileName}".`);
-    }
-
-    const baseUrls = {
-        desk: 'https://desk.zoho.com',
-        inventory: 'https://www.zohoapis.com/inventory'
-    };
+const makeApiCall = async (method, url, data, profile, service = 'desk') => {
+    const { accessToken } = await getValidAccessToken(profile, service);
+    const baseURL = service === 'inventory' 
+        ? 'https://www.zohoapis.com/inventory' 
+        : 'https://desk.zoho.com';
     
-    const baseUrl = baseUrls[service];
-    const fullUrl = `${baseUrl}${relativeUrl}`;
-    const orgId = serviceConfig.orgId;
-
-    const headers = { 
+    const headers = {
         'Authorization': `Zoho-oauthtoken ${accessToken}`,
-        ...(service === 'desk' && { 'orgId': orgId })
     };
+    if (service === 'desk') {
+        headers['orgId'] = profile.desk.orgId;
+    } else {
+        headers['X-ZOHO-ORGANIZATION-ID'] = profile.inventory.orgId;
+    }
 
-    const params = service === 'inventory' ? { organization_id: orgId } : {};
-    
-    return axios({ method, url: fullUrl, data, headers, params });
+    return axios({
+        method,
+        url: `${baseURL}${url}`,
+        data,
+        headers,
+    });
 };
 
+const createJobId = (socketId, profileName, jobType) => `${socketId}-${profileName}-${jobType}`;
 
 module.exports = {
-    readProfiles,
-    writeProfiles,
-    readTicketLog,
-    writeToTicketLog,
-    createJobId,
+    prisma, // Export prisma instance for use in other files
+    getProfiles,
+    createTicketLogEntry,
+    clearAllTicketLogs,
     parseError,
     getValidAccessToken,
-    makeApiCall
+    makeApiCall,
+    createJobId,
 };

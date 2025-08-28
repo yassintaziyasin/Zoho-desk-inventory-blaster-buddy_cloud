@@ -11,13 +11,15 @@ import NotFound from "@/pages/NotFound";
 import SingleTicket from "@/pages/SingleTicket";
 import { ProfileModal } from '@/components/dashboard/ProfileModal';
 import BulkInvoices from '@/pages/BulkInvoices';
-import SingleInvoice from '@/pages/SingleInvoice'; // Import the new page
-import EmailStatics from '@/pages/EmailStatics'; // Import the new page
+import SingleInvoice from '@/pages/SingleInvoice';
+import EmailStatics from '@/pages/EmailStatics';
 import { InvoiceResult } from '@/components/dashboard/inventory/InvoiceResultsDisplay';
 import { useJobTimer } from '@/hooks/useJobTimer';
 
 const queryClient = new QueryClient();
-const SERVER_URL = "http://localhost:3000";
+// This now uses an environment variable for the server URL,
+// falling back to localhost for local development.
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || "http://localhost:3000";
 
 // --- Interfaces ---
 export interface TicketFormData {
@@ -290,11 +292,12 @@ const MainApp = () => {
             const response = await fetch(`${SERVER_URL}/api/profiles/${encodeURIComponent(profileNameToDelete)}`, {
                 method: 'DELETE',
             });
-            const result = await response.json();
-            if (result.success) {
+            // Changed to check response.ok as the new endpoint doesn't return a body on success
+            if (response.ok) {
                 toast({ title: `Profile "${profileNameToDelete}" deleted successfully!` });
                 await queryClient.invalidateQueries({ queryKey: ['profiles'] });
             } else {
+                const result = await response.json();
                 toast({ title: 'Error', description: result.error, variant: 'destructive' });
             }
         } catch (error) {
@@ -360,7 +363,7 @@ const MainApp = () => {
                             <EmailStatics
                                 onAddProfile={handleOpenAddProfile}
                                 onEditProfile={handleOpenEditProfile}
-                                onDeleteProfile={handleDeleteProfile}
+                                onDeleteProfile={handleDelete.bind(this)}
                             />
                         }
                     />

@@ -1,0 +1,34 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Profile {
+  id                  Int     @id @default(autoincrement())
+  profileName         String  @unique
+  clientId            String
+  clientSecret        String
+  refreshToken        String
+  deskOrgId           String?
+  defaultDepartmentId String?
+  fromEmailAddress    String?
+  mailReplyAddressId  String?
+  inventoryOrgId      String?
+}
+
+model TicketLog {
+  id           Int      @id @default(autoincrement())
+  createdAt    DateTime @default(now())
+  email        String
+  success      Boolean
+  ticketNumber String?
+  details      String?
+  profileName  String
+}
