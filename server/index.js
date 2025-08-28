@@ -35,6 +35,7 @@ const io = new Server(server, {
 const activeJobs = {};
 deskHandler.setActiveJobs(activeJobs);
 inventoryHandler.setActiveJobs(activeJobs);
+
 const authStates = {};
 
 app.use(cors({ origin: frontendUrl }));
@@ -77,6 +78,31 @@ app.get('/api/zoho/callback', async (req, res) => {
         const { message } = parseError(error);
         io.to(authData.socketId).emit('zoho-refresh-token-error', { error: message });
         res.status(500).send(`<h1>Error</h1><p>Failed to get token: ${message}.</p>`);
+    }
+});
+
+app.post('/api/tickets/single', async (req, res) => {
+    try {
+        const result = await deskHandler.handleSendSingleTicket(req.body);
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ success: false, error: 'An unexpected server error occurred.' });
+    }
+});
+app.post('/api/tickets/verify', async (req, res) => {
+    try {
+        const result = await deskHandler.handleVerifyTicketEmail(req.body);
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ success: false, error: 'An unexpected server error occurred.' });
+    }
+});
+app.post('/api/invoices/single', async (req, res) => {
+    try {
+        const result = await inventoryHandler.handleSendSingleInvoice(req.body);
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ success: false, error: 'An unexpected server error occurred.' });
     }
 });
 
@@ -154,15 +180,14 @@ app.put('/api/profiles/:id', async (req, res) => {
     }
 });
 
-// CORRECTED: The route now uses the profile's 'id' for deletion
-app.delete('/api/profiles/:id', async (req, res) => {
-    const { id } = req.params;
-    console.log('[INFO] Received request to delete profile ID:', id);
+app.delete('/api/profiles/:profileNameToDelete', async (req, res) => {
+    const { profileNameToDelete } = req.params;
+    console.log('[INFO] Received request to delete profile:', profileNameToDelete);
     try {
         await prisma.profile.delete({
-            where: { id: parseInt(id, 10) }
+            where: { profileName: profileNameToDelete }
         });
-        console.log('[SUCCESS] Profile deleted successfully with ID:', id);
+        console.log('[SUCCESS] Profile deleted successfully:', profileNameToDelete);
         res.json({ success: true });
     } catch (error) {
         console.error('[ERROR] Failed to delete profile:', error);
@@ -175,6 +200,7 @@ app.delete('/api/profiles/:id', async (req, res) => {
 
 io.on('connection', (socket) => {
     console.log(`[INFO] New connection. Socket ID: ${socket.id}`);
+
     const deskListeners = {
         'startBulkCreate': deskHandler.handleStartBulkCreate,
         'getEmailFailures': deskHandler.handleGetEmailFailures,
@@ -190,6 +216,7 @@ io.on('connection', (socket) => {
         'getMailReplyAddressDetails': deskHandler.handleGetMailReplyAddressDetails,
         'updateMailReplyAddressDetails': deskHandler.handleUpdateMailReplyAddressDetails,
     };
+
     for (const [event, handler] of Object.entries(deskListeners)) {
         socket.on(event, async (data) => {
             const profiles = await getProfiles();
@@ -197,6 +224,7 @@ io.on('connection', (socket) => {
             handler(socket, { ...data, activeProfile });
         });
     }
+
     const inventoryListeners = {
         'startBulkInvoice': inventoryHandler.handleStartBulkInvoice,
         'getOrgDetails': inventoryHandler.handleGetOrgDetails,
@@ -204,6 +232,7 @@ io.on('connection', (socket) => {
         'getInvoices': inventoryHandler.handleGetInvoices,
         'deleteInvoices': inventoryHandler.handleDeleteInvoices,
     };
+
     for (const [event, handler] of Object.entries(inventoryListeners)) {
         socket.on(event, async (data) => {
             const profiles = await getProfiles();
