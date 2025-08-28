@@ -90,7 +90,6 @@ const handleStartBulkCreate = async (socket, data) => {
             result.fullResponse = fullResponse;
         }
         
-        // MODIFIED: Use the new async database function
         await createTicketLogEntry({ ...result, profileName: selectedProfileName });
         socket.emit('ticketResult', result);
         
@@ -106,9 +105,6 @@ const handleStartBulkCreate = async (socket, data) => {
         delete activeJobs[jobId];
     }
 };
-
-// Other handlers remain largely the same as they don't interact with the JSON files directly for logging.
-// They use makeApiCall which is already updated.
 
 const handleSendSingleTicket = async (data) => {
     const { email, subject, description, sendDirectReply, selectedProfileName, displayName } = data;
@@ -165,6 +161,10 @@ const handleVerifyTicketEmail = async (data) => {
 };
 
 const handleGetEmailFailures = async (socket, { activeProfile }) => {
+    // CORRECTED: Add a check to ensure activeProfile exists before using it.
+    if (!activeProfile || !activeProfile.desk?.defaultDepartmentId) {
+        return socket.emit('emailFailuresResult', { success: false, error: 'No active profile or department ID selected.' });
+    }
     try {
         const response = await makeApiCall('get', `/api/v1/departments/${activeProfile.desk.defaultDepartmentId}/emailfailures`, null, activeProfile);
         socket.emit('emailFailuresResult', { success: true, data: response.data.data });
@@ -174,6 +174,10 @@ const handleGetEmailFailures = async (socket, { activeProfile }) => {
 };
 
 const handleClearEmailFailures = async (socket, { activeProfile }) => {
+    // CORRECTED: Add a check to ensure activeProfile exists.
+    if (!activeProfile || !activeProfile.desk?.defaultDepartmentId) {
+        return socket.emit('clearEmailFailuresResult', { success: false, error: 'No active profile or department ID selected.' });
+    }
     try {
         await makeApiCall('delete', `/api/v1/departments/${activeProfile.desk.defaultDepartmentId}/emailfailures`, null, activeProfile);
         socket.emit('clearEmailFailuresResult', { success: true });
@@ -183,7 +187,11 @@ const handleClearEmailFailures = async (socket, { activeProfile }) => {
 };
 
 const handleGetMailReplyAddressDetails = async (socket, { activeProfile }) => {
-    if (!activeProfile.desk.mailReplyAddressId) {
+    // CORRECTED: Add a check to ensure activeProfile exists.
+    if (!activeProfile) {
+        return socket.emit('mailReplyAddressDetailsResult', { success: true, notConfigured: true, error: 'No profile selected.' });
+    }
+    if (!activeProfile.desk?.mailReplyAddressId) {
         return socket.emit('mailReplyAddressDetailsResult', { success: true, notConfigured: true });
     }
     try {
@@ -195,8 +203,9 @@ const handleGetMailReplyAddressDetails = async (socket, { activeProfile }) => {
 };
 
 const handleUpdateMailReplyAddressDetails = async (socket, { activeProfile, displayName }) => {
-    if (!activeProfile.desk.mailReplyAddressId) {
-        return socket.emit('updateMailReplyAddressResult', { success: false, error: 'Mail Reply Address ID not configured.' });
+    // CORRECTED: Add a check to ensure activeProfile exists.
+    if (!activeProfile || !activeProfile.desk?.mailReplyAddressId) {
+        return socket.emit('updateMailReplyAddressResult', { success: false, error: 'No active profile or Mail Reply Address ID configured.' });
     }
     try {
         const data = { displayName };
