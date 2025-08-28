@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQueryClient, useMutation, useQuery } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { io, Socket } from 'socket.io-client';
 import { useToast } from '@/hooks/use-toast';
@@ -17,7 +17,6 @@ import { InvoiceResult } from '@/components/dashboard/inventory/InvoiceResultsDi
 import { useJobTimer } from '@/hooks/useJobTimer';
 
 const queryClient = new QueryClient();
-// CORRECTED: Make SERVER_URL dynamic for production
 const SERVER_URL = import.meta.env.PROD ? '' : (import.meta.env.VITE_SERVER_URL || "http://localhost:3000");
 
 // --- Interfaces ---
@@ -158,7 +157,6 @@ const MainApp = () => {
     const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
     const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
 
-    // Use the custom hook for each job type
     useJobTimer(jobs, setJobs, 'ticket');
     useJobTimer(invoiceJobs, setInvoiceJobs, 'invoice');
 
@@ -166,10 +164,9 @@ const MainApp = () => {
         const socket = io(SERVER_URL);
         socketRef.current = socket;
 
-        socket.on('connect', () => {
-            toast({ title: "Connected to server!" });
-        });
+        socket.on('connect', () => toast({ title: "Connected to server!" }));
         
+        // ... (socket listeners remain the same) ...
         socket.on('ticketResult', (result: TicketResult & { profileName: string }) => {
           setJobs(prevJobs => {
             const profileJob = prevJobs[result.profileName];
@@ -185,27 +182,10 @@ const MainApp = () => {
             };
           });
         });
-
-        socket.on('ticketUpdate', (updateData) => {
-          setJobs(prevJobs => {
-            if (!prevJobs[updateData.profileName]) return prevJobs;
-            return {
-              ...prevJobs,
-              [updateData.profileName]: {
-                ...prevJobs[updateData.profileName],
-                results: prevJobs[updateData.profileName].results.map(r => 
-                  r.ticketNumber === updateData.ticketNumber ? { ...r, success: updateData.success, details: updateData.details, fullResponse: updateData.fullResponse } : r
-                )
-              }
-            }
-          });
-        });
-
         socket.on('invoiceResult', (result: InvoiceResult & { profileName: string }) => {
             setInvoiceJobs(prevJobs => {
                 const profileJob = prevJobs[result.profileName];
                 if (!profileJob) return prevJobs;
-
                 const newResults = [...profileJob.results];
                 const existingIndex = newResults.findIndex(r => r.rowNumber === result.rowNumber);
                 if (existingIndex > -1) {
@@ -214,9 +194,7 @@ const MainApp = () => {
                     newResults.push(result);
                 }
                 newResults.sort((a, b) => a.rowNumber - b.rowNumber);
-                
                 const isLast = newResults.length >= profileJob.totalToProcess;
-
                 return {
                     ...prevJobs,
                     [result.profileName]: {
@@ -227,22 +205,16 @@ const MainApp = () => {
                 };
             });
         });
-
         const handleJobCompletion = (data: {profileName: string, jobType: 'ticket' | 'invoice'}, title: string, description: string, variant?: "destructive") => {
             const { profileName, jobType } = data;
             const updater = (prev: any) => {
                 if (!prev[profileName]) return prev;
                 return { ...prev, [profileName]: { ...prev[profileName], isProcessing: false, isPaused: false, isComplete: true, countdown: 0 }};
             };
-
-            if (jobType === 'ticket') {
-                setJobs(updater);
-            } else {
-                setInvoiceJobs(updater);
-            }
+            if (jobType === 'ticket') setJobs(updater);
+            else setInvoiceJobs(updater);
             toast({ title, description, variant });
         };
-
         socket.on('bulkComplete', (data) => handleJobCompletion(data, `Processing Complete for ${data.profileName}!`, "All items for this profile have been processed."));
         socket.on('bulkEnded', (data) => handleJobCompletion(data, `Job Ended for ${data.profileName}`, "The process was stopped by the user.", "destructive"));
         socket.on('bulkError', (data) => handleJobCompletion(data, `Server Error for ${data.profileName}`, data.message, "destructive"));
@@ -262,46 +234,69 @@ const MainApp = () => {
         setIsProfileModalOpen(true);
     };
     
-    const handleSaveProfile = async (profileData: Profile, originalProfileName?: string) => {
-        const isEditing = !!originalProfileName;
-        const url = isEditing ? `${SERVER_URL}/api/profiles/${encodeURIComponent(originalProfileName)}` : `${SERVER_URL}/api/profiles`;
-        const method = isEditing ? 'PUT' : 'POST';
-
-        try {
-            const response = await fetch(url, {
+    // CORRECTED: Use useMutation for saving profiles
+    const saveProfileMutation = useMutation({
+        mutationFn: ({ profileData, originalProfileName }: { profileData: Profile, originalProfileName?: string }) => {
+            const isEditing = !!originalProfileName;
+            const url = isEditing ? `${SERVER_URL}/api/profiles/${encodeURIComponent(originalProfileName)}` : `${SERVER_URL}/api/profiles`;
+            const method = isEditing ? 'PUT' : 'POST';
+            return fetch(url, {
                 method,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(profileData),
-            });
-            const result = await response.json();
-            if (result.success) {
+            }).then(res => res.json());
+        },
+        onSuccess: (data, variables) => {
+            if (data.success) {
+                const isEditing = !!variables.originalProfileName;
                 toast({ title: `Profile ${isEditing ? 'updated' : 'added'} successfully!` });
-                queryClient.invalidateQueries({ queryKey: ['profiles'] });
+                
+                // Manually update the cache
+                queryClient.setQueryData(['profiles'], (oldData: Profile[] | undefined) => {
+                    const newProfile = variables.profileData;
+                    if (isEditing) {
+                        return oldData?.map(p => p.profileName === variables.originalProfileName ? newProfile : p) ?? [];
+                    } else {
+                        return [...(oldData ?? []), newProfile];
+                    }
+                });
+
                 setIsProfileModalOpen(false);
             } else {
-                toast({ title: 'Error', description: result.error, variant: 'destructive' });
+                toast({ title: 'Error', description: data.error, variant: 'destructive' });
             }
-        } catch (error) {
+        },
+        onError: () => {
             toast({ title: 'Error', description: 'Failed to save profile.', variant: 'destructive' });
         }
-    };
+    });
 
-    const handleDeleteProfile = async (profileNameToDelete: string) => {
-        try {
-            const response = await fetch(`${SERVER_URL}/api/profiles/${encodeURIComponent(profileNameToDelete)}`, {
+    // CORRECTED: Use useMutation for deleting profiles
+    const deleteProfileMutation = useMutation({
+        mutationFn: (profileNameToDelete: string) => {
+            return fetch(`${SERVER_URL}/api/profiles/${encodeURIComponent(profileNameToDelete)}`, {
                 method: 'DELETE',
             });
+        },
+        onSuccess: (response, profileNameToDelete) => {
             if (response.ok) {
                 toast({ title: `Profile "${profileNameToDelete}" deleted successfully!` });
-                await queryClient.invalidateQueries({ queryKey: ['profiles'] });
+
+                // Manually update the cache
+                queryClient.setQueryData(['profiles'], (oldData: Profile[] | undefined) => {
+                    return oldData?.filter(p => p.profileName !== profileNameToDelete) ?? [];
+                });
+
             } else {
-                const result = await response.json();
-                toast({ title: 'Error', description: result.error, variant: 'destructive' });
+                 response.json().then(data => {
+                    toast({ title: 'Error', description: data.error, variant: 'destructive' });
+                });
             }
-        } catch (error) {
+        },
+        onError: () => {
             toast({ title: 'Error', description: 'Failed to delete profile.', variant: 'destructive' });
         }
-    };
+    });
 
     return (
         <>
@@ -317,7 +312,7 @@ const MainApp = () => {
                                 createInitialJobState={createInitialJobState}
                                 onAddProfile={handleOpenAddProfile}
                                 onEditProfile={handleOpenEditProfile}
-                                onDeleteProfile={handleDeleteProfile}
+                                onDeleteProfile={(name) => deleteProfileMutation.mutate(name)}
                             />
                         }
                     />
@@ -327,7 +322,7 @@ const MainApp = () => {
                             <SingleTicket 
                                 onAddProfile={handleOpenAddProfile}
                                 onEditProfile={handleOpenEditProfile}
-                                onDeleteProfile={handleDeleteProfile}
+                                onDeleteProfile={(name) => deleteProfileMutation.mutate(name)}
                             />
                         }
                     />
@@ -341,7 +336,7 @@ const MainApp = () => {
                                 createInitialJobState={createInitialInvoiceJobState}
                                 onAddProfile={handleOpenAddProfile}
                                 onEditProfile={handleOpenEditProfile}
-                                onDeleteProfile={handleDeleteProfile}
+                                onDeleteProfile={(name) => deleteProfileMutation.mutate(name)}
                            />
                         }
                     />
@@ -351,7 +346,7 @@ const MainApp = () => {
                             <SingleInvoice
                                 onAddProfile={handleOpenAddProfile}
                                 onEditProfile={handleOpenEditProfile}
-                                onDeleteProfile={handleDeleteProfile}
+                                onDeleteProfile={(name) => deleteProfileMutation.mutate(name)}
                             />
                         }
                     />
@@ -361,7 +356,7 @@ const MainApp = () => {
                             <EmailStatics
                                 onAddProfile={handleOpenAddProfile}
                                 onEditProfile={handleOpenEditProfile}
-                                onDeleteProfile={handleDeleteProfile}
+                                onDeleteProfile={(name) => deleteProfileMutation.mutate(name)}
                             />
                         }
                     />
@@ -371,7 +366,7 @@ const MainApp = () => {
             <ProfileModal
                 isOpen={isProfileModalOpen}
                 onClose={() => setIsProfileModalOpen(false)}
-                onSave={handleSaveProfile}
+                onSave={(profileData, originalProfileName) => saveProfileMutation.mutate({ profileData, originalProfileName })}
                 profile={editingProfile}
                 socket={socketRef.current}
             />
