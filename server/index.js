@@ -268,6 +268,25 @@ io.on('connection', (socket) => {
 });
 
 
+// In server/index.js
+
+// ... (keep all the existing code above this)
+
+// --- Serve Frontend ---
+const path = require('path');
+app.use(express.static(path.join(__dirname, '..', 'dist')));
+
+// Handle client-side routing by serving index.html for all non-API routes
+app.get('*', (req, res) => {
+  if (!req.originalUrl.startsWith('/api')) {
+    res.sendFile(path.join(__dirname, '..', 'dist', 'index.html'));
+  } else {
+    // If it's an API route that doesn't exist, let it 404
+    res.status(404).send('API route not found');
+  }
+});
+
+
 server.listen(port, () => {
     console.log(`🚀 Server is running on http://localhost:${port}`);
 });
