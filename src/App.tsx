@@ -11,13 +11,13 @@ import NotFound from "@/pages/NotFound";
 import SingleTicket from "@/pages/SingleTicket";
 import { ProfileModal } from '@/components/dashboard/ProfileModal';
 import BulkInvoices from '@/pages/BulkInvoices';
-import SingleInvoice from '@/pages/SingleInvoice'; // Import the new page
-import EmailStatics from '@/pages/EmailStatics'; // Import the new page
+import SingleInvoice from '@/pages/SingleInvoice';
+import EmailStatics from '@/pages/EmailStatics';
 import { InvoiceResult } from '@/components/dashboard/inventory/InvoiceResultsDisplay';
 import { useJobTimer } from '@/hooks/useJobTimer';
 
 const queryClient = new QueryClient();
-const SERVER_URL = "http://localhost:3000";
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || "http://localhost:3000";
 
 // --- Interfaces ---
 export interface TicketFormData {
@@ -157,7 +157,6 @@ const MainApp = () => {
     const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
     const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
 
-    // Use the custom hook for each job type
     useJobTimer(jobs, setJobs, 'ticket');
     useJobTimer(invoiceJobs, setInvoiceJobs, 'invoice');
 

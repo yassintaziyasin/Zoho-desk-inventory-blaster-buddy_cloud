@@ -3,18 +3,19 @@ const http = require('http');
 const { Server } = require("socket.io");
 const cors = require('cors');
 const crypto = require('crypto');
-// MODIFIED: Added missing imports
-const { readProfiles, writeProfiles, parseError, getValidAccessToken, makeApiCall, createJobId } = require('./utils');
+const { initializeDatabase } = require('./db'); // Import the initializer
+const { getProfiles, createProfile, updateProfile, parseError, clearTicketLogs } = require('./utils');
 const deskHandler = require('./desk-handler');
 const inventoryHandler = require('./inventory-handler');
 require('dotenv').config();
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "http://localhost:8080" } });
+const io = new Server(server, { cors: { origin: "*" } }); // Allow all origins for simplicity in deployment
 
 const port = process.env.PORT || 3000;
-const REDIRECT_URI = `http://localhost:${port}/api/zoho/callback`;
+// Use environment variable for redirect URI in production
+const REDIRECT_URI = process.env.ZOHO_REDIRECT_URI || `http://localhost:${port}/api/zoho/callback`;
 
 const activeJobs = {};
 deskHandler.setActiveJobs(activeJobs);
@@ -88,7 +89,6 @@ app.post('/api/tickets/single', async (req, res) => {
     }
 });
 
-// NEW: Verification endpoint
 app.post('/api/tickets/verify', async (req, res) => {
     try {
         const result = await deskHandler.handleVerifyTicketEmail(req.body);
@@ -108,65 +108,61 @@ app.post('/api/invoices/single', async (req, res) => {
 });
 
 // --- PROFILE MANAGEMENT API ---
-app.get('/api/profiles', (req, res) => {
+app.get('/api/profiles', async (req, res) => {
     try {
-        const allProfiles = readProfiles();
+        const allProfiles = await getProfiles();
         res.json(allProfiles);
     } catch (error) {
         res.status(500).json({ message: "Could not load profiles." });
     }
 });
 
-app.post('/api/profiles', (req, res) => {
+app.post('/api/profiles', async (req, res) => {
     try {
         const newProfile = req.body;
-        const profiles = readProfiles();
         if (!newProfile || !newProfile.profileName) {
             return res.status(400).json({ success: false, error: "Profile name is required." });
         }
-        if (profiles.some(p => p.profileName === newProfile.profileName)) {
-            return res.status(400).json({ success: false, error: "A profile with this name already exists." });
-        }
-        profiles.push(newProfile);
-        writeProfiles(profiles);
-        res.json({ success: true, profiles });
+        await createProfile(newProfile);
+        const allProfiles = await getProfiles();
+        res.json({ success: true, profiles: allProfiles });
     } catch (error) {
+        if (error.constraint === 'profiles_profile_name_key') {
+             return res.status(400).json({ success: false, error: "A profile with this name already exists." });
+        }
         res.status(500).json({ success: false, error: "Failed to add profile." });
     }
 });
 
-app.put('/api/profiles/:profileNameToUpdate', (req, res) => {
+app.put('/api/profiles/:profileNameToUpdate', async (req, res) => {
     try {
         const { profileNameToUpdate } = req.params;
         const updatedProfileData = req.body;
-        const profiles = readProfiles();
-        const profileIndex = profiles.findIndex(p => p.profileName === profileNameToUpdate);
-        if (profileIndex === -1) {
-            return res.status(404).json({ success: false, error: "Profile not found." });
-        }
-        if (updatedProfileData.profileName !== profileNameToUpdate && profiles.some(p => p.profileName === updatedProfileData.profileName)) {
+        await updateProfile(profileNameToUpdate, updatedProfileData);
+        const allProfiles = await getProfiles();
+        res.json({ success: true, profiles: allProfiles });
+    } catch (error) {
+        if (error.constraint === 'profiles_profile_name_key') {
              return res.status(400).json({ success: false, error: "A profile with the new name already exists." });
         }
-        profiles[profileIndex] = { ...profiles[profileIndex], ...updatedProfileData };
-        writeProfiles(profiles);
-        res.json({ success: true, profiles });
-    } catch (error) {
         res.status(500).json({ success: false, error: "Failed to update profile." });
     }
 });
+
 
 // --- SOCKET.IO CONNECTION HANDLING ---
 io.on('connection', (socket) => {
     console.log(`[INFO] New connection. Socket ID: ${socket.id}`);
 
-    // --- GENERIC AND UTILITY LISTENERS ---
     socket.on('checkApiStatus', async (data) => {
         try {
             const { selectedProfileName, service = 'desk' } = data;
-            const profiles = readProfiles();
+            const profiles = await getProfiles();
             const activeProfile = profiles.find(p => p.profileName === selectedProfileName);
             if (!activeProfile) throw new Error("Profile not found");
             
+            // Re-import makeApiCall here to avoid circular dependency issues if utils needs it
+            const { makeApiCall, getValidAccessToken } = require('./utils');
             const tokenResponse = await getValidAccessToken(activeProfile, service);
 
             let validationData = {};
@@ -234,14 +230,21 @@ io.on('connection', (socket) => {
         'startBulkCreate': deskHandler.handleStartBulkCreate,
         'getEmailFailures': deskHandler.handleGetEmailFailures,
         'clearEmailFailures': deskHandler.handleClearEmailFailures,
-        'clearTicketLogs': (socket) => require('./utils').writeToTicketLog([]),
+        'clearTicketLogs': async (socket) => {
+            try {
+                await clearTicketLogs();
+                socket.emit('clearTicketLogsResult', { success: true });
+            } catch (error) {
+                socket.emit('clearTicketLogsResult', { success: false, error: 'Failed to clear logs.' });
+            }
+        },
         'getMailReplyAddressDetails': deskHandler.handleGetMailReplyAddressDetails,
         'updateMailReplyAddressDetails': deskHandler.handleUpdateMailReplyAddressDetails,
     };
 
     for (const [event, handler] of Object.entries(deskListeners)) {
-        socket.on(event, (data) => {
-            const profiles = readProfiles();
+        socket.on(event, async (data) => {
+            const profiles = await getProfiles();
             const activeProfile = data ? profiles.find(p => p.profileName === data.selectedProfileName) : null;
             handler(socket, { ...data, activeProfile });
         });
@@ -257,8 +260,8 @@ io.on('connection', (socket) => {
     };
 
     for (const [event, handler] of Object.entries(inventoryListeners)) {
-        socket.on(event, (data) => {
-            const profiles = readProfiles();
+        socket.on(event, async (data) => {
+            const profiles = await getProfiles();
             const activeProfile = data ? profiles.find(p => p.profileName === data.selectedProfileName) : null;
             handler(socket, { ...data, activeProfile });
         });
@@ -266,6 +269,9 @@ io.on('connection', (socket) => {
 });
 
 
-server.listen(port, () => {
-    console.log(`🚀 Server is running on http://localhost:${port}`);
+// Start the server after initializing the database
+initializeDatabase().then(() => {
+    server.listen(port, () => {
+        console.log(`🚀 Server is running on http://localhost:${port}`);
+    });
 });

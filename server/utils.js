@@ -1,52 +1,66 @@
-const fs = require('fs');
-const path = require('path');
 const axios = require('axios');
+const db = require('./db'); // Import the new db module
 
-const PROFILES_PATH = path.join(__dirname, 'profiles.json');
-const TICKET_LOG_PATH = path.join(__dirname, 'ticket-log.json');
 const tokenCache = {};
 
-const readProfiles = () => {
+// Fetches all profiles from the database
+const getProfiles = async () => {
     try {
-        if (fs.existsSync(PROFILES_PATH)) {
-            const data = fs.readFileSync(PROFILES_PATH);
-            return JSON.parse(data);
-        }
+        const { rows } = await db.query('SELECT * FROM profiles ORDER BY profile_name ASC');
+        // The database returns snake_case, but the app uses camelCase.
+        // We need to map the column names.
+        return rows.map(p => ({
+            profileName: p.profile_name,
+            clientId: p.client_id,
+            clientSecret: p.client_secret,
+            refreshToken: p.refresh_token,
+            desk: p.desk_config,
+            inventory: p.inventory_config
+        }));
     } catch (error) {
-        console.error('[ERROR] Could not read profiles.json:', error);
+        console.error('[ERROR] Could not read profiles from database:', error);
+        return [];
     }
-    return [];
 };
 
-const writeProfiles = (profiles) => {
-    try {
-        fs.writeFileSync(PROFILES_PATH, JSON.stringify(profiles, null, 2));
-    } catch (error) {
-        console.error('[ERROR] Could not write to profiles.json:', error);
-    }
+// Creates a new profile in the database
+const createProfile = (profileData) => {
+    const { profileName, clientId, clientSecret, refreshToken, desk, inventory } = profileData;
+    const query = `
+        INSERT INTO profiles(profile_name, client_id, client_secret, refresh_token, desk_config, inventory_config)
+        VALUES($1, $2, $3, $4, $5, $6)
+        RETURNING *;
+    `;
+    const values = [profileName, clientId, clientSecret, refreshToken, JSON.stringify(desk), JSON.stringify(inventory)];
+    return db.query(query, values);
 };
 
-const readTicketLog = () => {
-    try {
-        if (fs.existsSync(TICKET_LOG_PATH)) {
-            const data = fs.readFileSync(TICKET_LOG_PATH);
-            return JSON.parse(data);
-        }
-    } catch (error) {
-        console.error('[ERROR] Could not read ticket-log.json:', error);
-    }
-    return [];
+// Updates an existing profile in the database
+const updateProfile = (originalProfileName, profileData) => {
+    const { profileName, clientId, clientSecret, refreshToken, desk, inventory } = profileData;
+    const query = `
+        UPDATE profiles
+        SET profile_name = $1, client_id = $2, client_secret = $3, refresh_token = $4, desk_config = $5, inventory_config = $6
+        WHERE profile_name = $7
+        RETURNING *;
+    `;
+    const values = [profileName, clientId, clientSecret, refreshToken, JSON.stringify(desk), JSON.stringify(inventory), originalProfileName];
+    return db.query(query, values);
 };
 
+
+// Writes a new ticket log entry to the database
 const writeToTicketLog = (newEntry) => {
-    const log = readTicketLog();
-    log.push(newEntry);
-    try {
-        fs.writeFileSync(TICKET_LOG_PATH, JSON.stringify(log, null, 2));
-    } catch (error) {
-        console.error('[ERROR] Could not write to ticket-log.json:', error);
-    }
+    const { ticketNumber, email } = newEntry;
+    const query = 'INSERT INTO ticket_logs(ticket_number, email) VALUES($1, $2)';
+    db.query(query, [ticketNumber, email]).catch(err => console.error('[ERROR] Could not write to ticket_logs table:', err));
 };
+
+// Clears all entries from the ticket_logs table
+const clearTicketLogs = () => {
+    return db.query('DELETE FROM ticket_logs');
+};
+
 
 const createJobId = (socketId, profileName, jobType) => `${socketId}_${profileName}_${jobType}`;
 
@@ -156,10 +170,11 @@ const makeApiCall = async (method, relativeUrl, data, profile, service) => {
 
 
 module.exports = {
-    readProfiles,
-    writeProfiles,
-    readTicketLog,
+    getProfiles,
+    createProfile,
+    updateProfile,
     writeToTicketLog,
+    clearTicketLogs,
     createJobId,
     parseError,
     getValidAccessToken,

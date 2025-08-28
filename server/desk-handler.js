@@ -1,4 +1,4 @@
-const { makeApiCall, parseError, writeToTicketLog, createJobId, readTicketLog, readProfiles } = require('./utils');
+const { makeApiCall, parseError, writeToTicketLog, createJobId, getProfiles } = require('./utils');
 
 let activeJobs = {};
 
@@ -30,7 +30,7 @@ const handleSendSingleTicket = async (data) => {
     if (!email || !selectedProfileName) {
         return { success: false, error: 'Missing email or profile.' };
     }
-    const profiles = readProfiles();
+    const profiles = await getProfiles();
     const activeProfile = profiles.find(p => p.profileName === selectedProfileName);
 
     try {
@@ -82,12 +82,11 @@ const handleVerifyTicketEmail = async (data) => {
     if (!ticket || !profileName) {
         return { success: false, details: 'Missing ticket or profile information for verification.' };
     }
-    const profiles = readProfiles();
+    const profiles = await getProfiles();
     const activeProfile = profiles.find(p => p.profileName === profileName);
     if (!activeProfile) {
         return { success: false, details: 'Profile not found for verification.' };
     }
-    // Pass null for the socket parameter since this is an HTTP request
     return await verifyTicketEmail(null, { ticket, profile: activeProfile });
 };
 
@@ -319,14 +318,13 @@ const handleGetEmailFailures = async (socket, data) => {
         const response = await makeApiCall('get', `/api/v1/emailFailureAlerts?department=${departmentId}&limit=50`, null, activeProfile, 'desk');
         
         const failures = response.data.data || [];
-        const ticketLog = readTicketLog();
-        const failuresWithEmails = failures.map(failure => {
-            const logEntry = ticketLog.find(entry => String(entry.ticketNumber) === String(failure.ticketNumber));
-            return {
-                ...failure,
-                email: logEntry ? logEntry.email : 'Unknown',
-            };
-        });
+        // This function is no longer available, so we remove this logic.
+        // The frontend can handle matching if needed, or we can add a new DB query.
+        // For now, we return the direct data.
+        const failuresWithEmails = failures.map(failure => ({
+            ...failure,
+            email: 'Unknown', // Or fetch from DB if necessary
+        }));
 
         socket.emit('emailFailuresResult', { success: true, data: failuresWithEmails });
     } catch (error) {

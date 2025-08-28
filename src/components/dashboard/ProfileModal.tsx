@@ -17,9 +17,8 @@ interface ProfileModalProps {
   socket: Socket | null;
 }
 
-const SERVER_URL = "http://localhost:3000";
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || "http://localhost:3000";
 
-// NEW: Define an initial empty state for the form
 const getInitialFormData = (): Profile => ({
   profileName: '',
   clientId: '',
@@ -45,7 +44,6 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onS
   useEffect(() => {
     if (isOpen) {
         if (profile) {
-            // If editing, merge the existing profile data with the full structure to ensure no fields are missing
             setFormData({
                 ...getInitialFormData(),
                 ...profile,
@@ -53,13 +51,11 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onS
                 inventory: { ...getInitialFormData().inventory, ...profile.inventory },
             });
         } else {
-            // If adding a new profile, start with a completely empty form
             setFormData(getInitialFormData());
         }
     }
   }, [profile, isOpen]);
 
-  // Listen for token from server via Socket.IO
   useEffect(() => {
     if (!socket || !isOpen) return;
 
@@ -88,13 +84,12 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onS
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // NEW: Handler for nested fields (Desk and Inventory)
   const handleNestedChange = (service: 'desk' | 'inventory', e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({
         ...prev,
         [service]: {
-            ...prev[service],
+            ...(prev[service] || {}),
             [name]: value,
         }
     }));
@@ -153,7 +148,6 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onS
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
-          {/* --- SHARED SETTINGS --- */}
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="profileName" className="text-right">Profile Name</Label>
@@ -181,7 +175,6 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onS
           
           <Separator className="my-4" />
 
-          {/* --- ZOHO DESK SETTINGS --- */}
           <div>
             <h4 className="text-sm font-semibold mb-4 flex items-center">
               <Building className="h-4 w-4 mr-2" />
@@ -202,30 +195,28 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onS
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="mailReplyAddressId" className="text-right">Mail Reply ID</Label>
-                <Input id="mailReplyAddressId" name="mailReplyAddressId" value={formData.desk?.mailReplyAddressId || ''} onChange={(e) => handleNestedChange('desk', e)} className="col-span-3" placeholder="(Optional)" />
+                <Input id="mailReplyAddressId" name="mailReplyAddressId" value={formData.desk?.mailReplyAddressId || ''} onChange={(e) => handleNestedChange('desk', e)} className="col-span-3" />
+                </div>
+            </div>
+          </div>
+
+          <Separator className="my-4" />
+
+          <div>
+            <h4 className="text-sm font-semibold mb-4 flex items-center">
+                <Briefcase className="h-4 w-4 mr-2" />
+                Zoho Inventory Settings
+            </h4>
+            <div className="grid gap-4 pl-4 border-l-2 ml-2">
+                <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="inv_orgId" className="text-right">Org ID</Label>
+                    <Input id="inv_orgId" name="orgId" value={formData.inventory?.orgId || ''} onChange={(e) => handleNestedChange('inventory', e)} className="col-span-3" />
                 </div>
             </div>
           </div>
           
-          <Separator className="my-4" />
-
-          {/* --- ZOHO INVENTORY SETTINGS --- */}
-          <div>
-            <h4 className="text-sm font-semibold mb-4 flex items-center">
-              <Briefcase className="h-4 w-4 mr-2" />
-              Zoho Inventory Settings
-            </h4>
-            <div className="grid gap-4 pl-4 border-l-2 ml-2">
-                <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="inventory_orgId" className="text-right">Org ID</Label>
-                <Input id="inventory_orgId" name="orgId" value={formData.inventory?.orgId || ''} onChange={(e) => handleNestedChange('inventory', e)} className="col-span-3" />
-                </div>
-            </div>
-          </div>
-
-
-          <DialogFooter className="pt-8">
-            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+          <DialogFooter className="mt-6">
+            <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
             <Button type="submit">Save Profile</Button>
           </DialogFooter>
         </form>

@@ -1,6 +1,4 @@
-// In server/inventory-handler.js
-
-const { makeApiCall, parseError, createJobId, readProfiles } = require('./utils');
+const { makeApiCall, parseError, createJobId, getProfiles } = require('./utils');
 
 let activeJobs = {};
 
@@ -160,7 +158,6 @@ const handleStartBulkInvoice = async (socket, data) => {
                     console.log(`[INFO] Created new contact for ${email} with ID: ${contactId}`);
                 }
                 
-                // Fetch full contact details to get contact_person_id
                 const contactDetailsResponse = await makeApiCall('get', `/v1/contacts/${contactId}`, null, activeProfile, 'inventory');
                 const contact = contactDetailsResponse.data.contact;
                 if (Array.isArray(contact.contact_persons) && contact.contact_persons.length > 0) {
@@ -307,7 +304,7 @@ const handleSendSingleInvoice = async (data) => {
     if (!email || !subject || !body || !selectedProfileName) {
         return { success: false, error: 'Missing required fields.' };
     }
-    const profiles = readProfiles();
+    const profiles = await getProfiles();
     const activeProfile = profiles.find(p => p.profileName === selectedProfileName);
     
     if (!activeProfile || !activeProfile.inventory) {
@@ -407,7 +404,6 @@ const handleGetInvoices = async (socket, data) => {
         const response = await makeApiCall('get', url, null, activeProfile, 'inventory');
         const invoices = response.data.invoices;
 
-        // Enrich invoices with customer email
         const enrichedInvoices = await Promise.all(invoices.map(async (invoice) => {
             if (invoice.customer_id) {
                 try {
@@ -417,7 +413,6 @@ const handleGetInvoices = async (socket, data) => {
                         email: contactResponse.data.contact.email
                     };
                 } catch (error) {
-                    // if contact fetch fails, return invoice without email
                     return invoice;
                 }
             }
