@@ -1,5 +1,3 @@
-// In src/components/dashboard/ProfileModal.tsx
-
 import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -19,8 +17,9 @@ interface ProfileModalProps {
   socket: Socket | null;
 }
 
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || "http://localhost:3000";
+const SERVER_URL = "http://localhost:3000";
 
+// NEW: Define an initial empty state for the form
 const getInitialFormData = (): Profile => ({
   profileName: '',
   clientId: '',
@@ -46,6 +45,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onS
   useEffect(() => {
     if (isOpen) {
         if (profile) {
+            // If editing, merge the existing profile data with the full structure to ensure no fields are missing
             setFormData({
                 ...getInitialFormData(),
                 ...profile,
@@ -53,11 +53,13 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onS
                 inventory: { ...getInitialFormData().inventory, ...profile.inventory },
             });
         } else {
+            // If adding a new profile, start with a completely empty form
             setFormData(getInitialFormData());
         }
     }
   }, [profile, isOpen]);
 
+  // Listen for token from server via Socket.IO
   useEffect(() => {
     if (!socket || !isOpen) return;
 
@@ -86,6 +88,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onS
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
+  // NEW: Handler for nested fields (Desk and Inventory)
   const handleNestedChange = (service: 'desk' | 'inventory', e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({
@@ -149,8 +152,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onS
             Enter the shared credentials and service-specific settings for this Zoho account.
           </DialogDescription>
         </DialogHeader>
-        {/* The change is happening below */}
-        <form>
+        <form onSubmit={handleSubmit}>
           {/* --- SHARED SETTINGS --- */}
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4">
@@ -224,7 +226,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onS
 
           <DialogFooter className="pt-8">
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="button" onClick={() => onSave(formData, profile?.profileName)}>Save Profile</Button>
+            <Button type="submit">Save Profile</Button>
           </DialogFooter>
         </form>
       </DialogContent>

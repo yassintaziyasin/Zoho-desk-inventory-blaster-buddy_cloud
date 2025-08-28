@@ -52,7 +52,7 @@ interface ZohoDashboardProps {
   onEditProfile: (profile: Profile) => void;
 }
 
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || "http://localhost:3000";
+const SERVER_URL = "http://localhost:3000";
 
 export const ZohoDashboard: React.FC<ZohoDashboardProps> = ({ jobs, setJobs, createInitialJobState, onAddProfile, onEditProfile, socket: socketProp }) => {
   const { toast } = useToast();
@@ -201,6 +201,8 @@ export const ZohoDashboard: React.FC<ZohoDashboardProps> = ({ jobs, setJobs, cre
         ...prev,
         [activeProfileName]: {
             ...prev[activeProfileName],
+            // *** THIS IS THE FIX ***
+            // Reset results to an empty array before starting a new job.
             results: [], 
             isProcessing: true,
             isPaused: false,

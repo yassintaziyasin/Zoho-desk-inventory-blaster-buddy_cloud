@@ -1,5 +1,3 @@
-// In src/pages/SingleInvoice.tsx
-
 import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { io, Socket } from 'socket.io-client';
@@ -28,11 +26,10 @@ interface SingleInvoiceProps {
   onEditProfile: (profile: Profile) => void;
 }
 
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || "http://localhost:3000";
+const SERVER_URL = "http://localhost:3000";
 let socket: Socket;
 
-// ... (The rest of the file remains exactly the same)
-// The ImageToolDialog component is unchanged
+// New component for the Image Insertion Dialog
 const ImageToolDialog = ({ onApply }: { onApply: (html: string) => void }) => {
     const [imageUrl, setImageUrl] = useState('');
     const [altText, setAltText] = useState('');
@@ -231,6 +228,7 @@ const handleCreateInvoice = async () => {
 
       const data = await response.json();
 
+      // This is the logic that was previously in the socket listener
       setResult(data);
       setIsResultModalOpen(true);
       toast({
@@ -249,6 +247,8 @@ const handleCreateInvoice = async () => {
     }
   };
 
+
+//------------
 const handleApplyImage = (html: string) => {
   setBody(prev => prev + '\n' + html);
 };

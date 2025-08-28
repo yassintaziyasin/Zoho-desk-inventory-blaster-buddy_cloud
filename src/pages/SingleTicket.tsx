@@ -1,5 +1,3 @@
-// In src/pages/SingleTicket.tsx
-
 import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { io, Socket } from 'socket.io-client';
@@ -43,11 +41,10 @@ interface SingleTicketProps {
     onEditProfile: (profile: Profile) => void;
 }
 
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || "http://localhost:3000";
+const SERVER_URL = "http://localhost:3000";
 let socket: Socket;
 
-// ... (The rest of the file remains exactly the same)
-// The ImageToolDialog component is unchanged
+// New component for the Image Insertion Dialog
 const ImageToolDialog = ({ onApply }: { onApply: (html: string) => void }) => {
     const [imageUrl, setImageUrl] = useState('');
     const [altText, setAltText] = useState('');
@@ -213,6 +210,7 @@ const SingleTicket: React.FC<SingleTicketProps> = ({ onAddProfile, onEditProfile
         }
     });
 
+    // --- NEW: Socket listeners for Sender Name ---
     const handleDetailsResult = (result: any) => {
         setIsLoadingName(false);
         if (result.success) {
@@ -248,6 +246,7 @@ const SingleTicket: React.FC<SingleTicketProps> = ({ onAddProfile, onEditProfile
     }
   }, [activeProfileName, socket?.connected]);
 
+  // --- NEW: Effect to fetch display name when profile changes ---
   const fetchDisplayName = () => {
       if (selectedProfile?.desk?.mailReplyAddressId && socket) {
           setIsLoadingName(true);
@@ -261,6 +260,7 @@ const SingleTicket: React.FC<SingleTicketProps> = ({ onAddProfile, onEditProfile
     if (selectedProfile && socket) {
       fetchDisplayName();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProfile, socket]);
   
   const handleProfileChange = (profileName: string) => {
@@ -441,7 +441,8 @@ const SingleTicket: React.FC<SingleTicketProps> = ({ onAddProfile, onEditProfile
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="space-y-4">
 				
-				  <div className="space-y-2">
+				  {/* --- NEW: Sender Name Section --- */}
+                  <div className="space-y-2">
                     <Label htmlFor="displayName" className="flex items-center space-x-2"><Edit className="h-4 w-4" /><span>Sender Name (Display Name)</span></Label>
                     <div className="flex items-center space-x-2">
                         <Input id="displayName" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder={isLoadingName ? "Loading..." : "Not configured"} disabled={!selectedProfile?.desk?.mailReplyAddressId || isLoadingName} />

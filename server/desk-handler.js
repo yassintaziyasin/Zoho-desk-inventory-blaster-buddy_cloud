@@ -1,6 +1,4 @@
-// In server/desk-handler.js
-
-const { makeApiCall, parseError, writeToTicketLog, createJobId, readTicketLog } = require('./utils');
+const { makeApiCall, parseError, writeToTicketLog, createJobId, readTicketLog, readProfiles } = require('./utils');
 
 let activeJobs = {};
 
@@ -27,11 +25,12 @@ const interruptibleSleep = (ms, jobId) => {
     });
 };
 
-const handleSendSingleTicket = async (data, profiles) => {
+const handleSendSingleTicket = async (data) => {
     const { email, subject, description, selectedProfileName, sendDirectReply } = data;
     if (!email || !selectedProfileName) {
         return { success: false, error: 'Missing email or profile.' };
     }
+    const profiles = readProfiles();
     const activeProfile = profiles.find(p => p.profileName === selectedProfileName);
 
     try {
@@ -52,7 +51,7 @@ const handleSendSingleTicket = async (data, profiles) => {
         const newTicket = ticketResponse.data;
         let fullResponseData = { ticketCreate: newTicket };
 
-        await writeToTicketLog({ ticketNumber: newTicket.ticketNumber, email });
+        writeToTicketLog({ ticketNumber: newTicket.ticketNumber, email });
 
         if (sendDirectReply) {
             try {
@@ -78,15 +77,17 @@ const handleSendSingleTicket = async (data, profiles) => {
     }
 };
 
-const handleVerifyTicketEmail = async (data, profiles) => {
+const handleVerifyTicketEmail = async (data) => {
     const { ticket, profileName } = data;
     if (!ticket || !profileName) {
         return { success: false, details: 'Missing ticket or profile information for verification.' };
     }
+    const profiles = readProfiles();
     const activeProfile = profiles.find(p => p.profileName === profileName);
     if (!activeProfile) {
         return { success: false, details: 'Profile not found for verification.' };
     }
+    // Pass null for the socket parameter since this is an HTTP request
     return await verifyTicketEmail(null, { ticket, profile: activeProfile });
 };
 
@@ -115,7 +116,7 @@ const handleSendTestTicket = async (socket, data) => {
         const newTicket = ticketResponse.data;
         let fullResponseData = { ticketCreate: newTicket };
 
-        await writeToTicketLog({ ticketNumber: newTicket.ticketNumber, email });
+        writeToTicketLog({ ticketNumber: newTicket.ticketNumber, email });
 
         if (sendDirectReply) {
             try {
@@ -188,7 +189,7 @@ const handleStartBulkCreate = async (socket, data) => {
                 let fullResponseData = { ticketCreate: newTicket };
                 let overallSuccess = true; 
 
-                await writeToTicketLog({ ticketNumber: newTicket.ticketNumber, email });
+                writeToTicketLog({ ticketNumber: newTicket.ticketNumber, email });
 
                 if (sendDirectReply) {
                     try {
@@ -249,7 +250,7 @@ const handleStartBulkCreate = async (socket, data) => {
 const verifyTicketEmail = async (socket, { ticket, profile, resultEventName = 'ticketUpdate' }) => {
     let fullResponse = { ticketCreate: ticket, verifyEmail: {} };
     try {
-        if (socket) {
+        if (socket) { // Only delay for WebSocket-based calls
             await new Promise(resolve => setTimeout(resolve, 10000));
         }
         
@@ -318,7 +319,7 @@ const handleGetEmailFailures = async (socket, data) => {
         const response = await makeApiCall('get', `/api/v1/emailFailureAlerts?department=${departmentId}&limit=50`, null, activeProfile, 'desk');
         
         const failures = response.data.data || [];
-        const ticketLog = await readTicketLog(); // Now async
+        const ticketLog = readTicketLog();
         const failuresWithEmails = failures.map(failure => {
             const logEntry = ticketLog.find(entry => String(entry.ticketNumber) === String(failure.ticketNumber));
             return {

@@ -1,5 +1,3 @@
-// In src/App.tsx
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -13,18 +11,15 @@ import NotFound from "@/pages/NotFound";
 import SingleTicket from "@/pages/SingleTicket";
 import { ProfileModal } from '@/components/dashboard/ProfileModal';
 import BulkInvoices from '@/pages/BulkInvoices';
-import SingleInvoice from '@/pages/SingleInvoice';
-import EmailStatics from '@/pages/EmailStatics';
+import SingleInvoice from '@/pages/SingleInvoice'; // Import the new page
+import EmailStatics from '@/pages/EmailStatics'; // Import the new page
 import { InvoiceResult } from '@/components/dashboard/inventory/InvoiceResultsDisplay';
 import { useJobTimer } from '@/hooks/useJobTimer';
 
 const queryClient = new QueryClient();
+const SERVER_URL = "http://localhost:3000";
 
-// Use Vite's environment variables to set the server URL
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || "http://localhost:3000";
-
-
-// --- Interfaces (Unchanged) ---
+// --- Interfaces ---
 export interface TicketFormData {
   emails: string;
   subject: string;
@@ -162,18 +157,95 @@ const MainApp = () => {
     const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
     const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
 
+    // Use the custom hook for each job type
     useJobTimer(jobs, setJobs, 'ticket');
     useJobTimer(invoiceJobs, setInvoiceJobs, 'invoice');
 
     useEffect(() => {
-        const socket = io(SERVER_URL, {
-            // This helps with some deployment environments
-            transports: ['websocket', 'polling']
-        });
+        const socket = io(SERVER_URL);
         socketRef.current = socket;
 
-        // ... rest of useEffect is unchanged
+        socket.on('connect', () => {
+            toast({ title: "Connected to server!" });
+        });
         
+        socket.on('ticketResult', (result: TicketResult & { profileName: string }) => {
+          setJobs(prevJobs => {
+            const profileJob = prevJobs[result.profileName];
+            if (!profileJob) return prevJobs;
+            const isLastTicket = profileJob.results.length + 1 >= profileJob.totalTicketsToProcess;
+            return {
+              ...prevJobs,
+              [result.profileName]: {
+                ...profileJob,
+                results: [...profileJob.results, result],
+                countdown: isLastTicket ? 0 : profileJob.currentDelay,
+              }
+            };
+          });
+        });
+
+        socket.on('ticketUpdate', (updateData) => {
+          setJobs(prevJobs => {
+            if (!prevJobs[updateData.profileName]) return prevJobs;
+            return {
+              ...prevJobs,
+              [updateData.profileName]: {
+                ...prevJobs[updateData.profileName],
+                results: prevJobs[updateData.profileName].results.map(r => 
+                  r.ticketNumber === updateData.ticketNumber ? { ...r, success: updateData.success, details: updateData.details, fullResponse: updateData.fullResponse } : r
+                )
+              }
+            }
+          });
+        });
+
+        socket.on('invoiceResult', (result: InvoiceResult & { profileName: string }) => {
+            setInvoiceJobs(prevJobs => {
+                const profileJob = prevJobs[result.profileName];
+                if (!profileJob) return prevJobs;
+
+                const newResults = [...profileJob.results];
+                const existingIndex = newResults.findIndex(r => r.rowNumber === result.rowNumber);
+                if (existingIndex > -1) {
+                    newResults[existingIndex] = { ...newResults[existingIndex], ...result };
+                } else {
+                    newResults.push(result);
+                }
+                newResults.sort((a, b) => a.rowNumber - b.rowNumber);
+                
+                const isLast = newResults.length >= profileJob.totalToProcess;
+
+                return {
+                    ...prevJobs,
+                    [result.profileName]: {
+                        ...profileJob,
+                        results: newResults,
+                        countdown: isLast ? 0 : profileJob.currentDelay,
+                    }
+                };
+            });
+        });
+
+        const handleJobCompletion = (data: {profileName: string, jobType: 'ticket' | 'invoice'}, title: string, description: string, variant?: "destructive") => {
+            const { profileName, jobType } = data;
+            const updater = (prev: any) => {
+                if (!prev[profileName]) return prev;
+                return { ...prev, [profileName]: { ...prev[profileName], isProcessing: false, isPaused: false, isComplete: true, countdown: 0 }};
+            };
+
+            if (jobType === 'ticket') {
+                setJobs(updater);
+            } else {
+                setInvoiceJobs(updater);
+            }
+            toast({ title, description, variant });
+        };
+
+        socket.on('bulkComplete', (data) => handleJobCompletion(data, `Processing Complete for ${data.profileName}!`, "All items for this profile have been processed."));
+        socket.on('bulkEnded', (data) => handleJobCompletion(data, `Job Ended for ${data.profileName}`, "The process was stopped by the user.", "destructive"));
+        socket.on('bulkError', (data) => handleJobCompletion(data, `Server Error for ${data.profileName}`, data.message, "destructive"));
+
         return () => {
           socket.disconnect();
         };
@@ -189,30 +261,30 @@ const MainApp = () => {
         setIsProfileModalOpen(true);
     };
     
-const handleSaveProfile = async (profileData: Profile, originalProfileName?: string) => {
-    const isEditing = !!originalProfileName;
-    // Remove trailing slash from SERVER_URL to prevent double slashes
-    const cleanServerUrl = SERVER_URL.replace(/\/$/, "");
-    const url = isEditing ? `${cleanServerUrl}/api/profiles/${encodeURIComponent(originalProfileName)}` : `${cleanServerUrl}/api/profiles`;
+    const handleSaveProfile = async (profileData: Profile, originalProfileName?: string) => {
+        const isEditing = !!originalProfileName;
+        const url = isEditing ? `${SERVER_URL}/api/profiles/${encodeURIComponent(originalProfileName)}` : `${SERVER_URL}/api/profiles`;
+        const method = isEditing ? 'PUT' : 'POST';
 
-    try {
-        const response = await fetch(url, {
-            method,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(profileData),
-        });
-        const result = await response.json();
-        if (result.success) {
-            toast({ title: `Profile ${isEditing ? 'updated' : 'added'} successfully!` });
-            queryClient.invalidateQueries({ queryKey: ['profiles'] });
-            setIsProfileModalOpen(false);
-        } else {
-            toast({ title: 'Error', description: result.error, variant: 'destructive' });
+        try {
+            const response = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(profileData),
+            });
+            const result = await response.json();
+            if (result.success) {
+                toast({ title: `Profile ${isEditing ? 'updated' : 'added'} successfully!` });
+                queryClient.invalidateQueries({ queryKey: ['profiles'] });
+                setIsProfileModalOpen(false);
+            } else {
+                toast({ title: 'Error', description: result.error, variant: 'destructive' });
+            }
+        } catch (error) {
+            toast({ title: 'Error', description: 'Failed to save profile.', variant: 'destructive' });
         }
-    } catch (error) {
-        toast({ title: 'Error', description: 'Failed to save profile.', variant: 'destructive' });
-    }
-};
+    };
+
     return (
         <>
             <BrowserRouter>
