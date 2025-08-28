@@ -363,7 +363,7 @@ const MainApp = () => {
                             <EmailStatics
                                 onAddProfile={handleOpenAddProfile}
                                 onEditProfile={handleOpenEditProfile}
-                                onDeleteProfile={handleDelete.bind(this)}
+                                onDeleteProfile={handleDeleteProfile}
                             />
                         }
                     />
