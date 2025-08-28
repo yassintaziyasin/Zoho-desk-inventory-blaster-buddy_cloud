@@ -3,9 +3,8 @@ const http = require('http');
 const { Server } = require("socket.io");
 const cors = require('cors');
 const crypto = require('crypto');
-const path = require('path'); // Import the path module
+const path = require('path');
 
-// Import new Prisma functions from utils.js
 const { 
     prisma, 
     getProfiles, 
@@ -22,9 +21,7 @@ require('dotenv').config();
 const app = express();
 const server = http.createServer(app);
 
-// --- DEPLOYMENT CONFIGURATION ---
-const isProduction = process.env.NODE_ENV === 'production';
-const frontendUrl = process.env.PUBLIC_URL || 'http://localhost:8080'; // Zeabur will provide PUBLIC_URL
+const frontendUrl = process.env.PUBLIC_URL || 'http://localhost:8080';
 const port = process.env.PORT || 3000;
 const REDIRECT_URI = `${frontendUrl}/api/zoho/callback`;
 
@@ -43,11 +40,8 @@ const authStates = {};
 
 app.use(cors({ origin: frontendUrl }));
 app.use(express.json());
-
-// --- SERVE STATIC FRONTEND ---
 app.use(express.static(path.join(__dirname, '../public')));
 
-// --- ZOHO AUTH FLOW (No changes) ---
 app.post('/api/zoho/auth', (req, res) => {
     const { clientId, clientSecret, socketId } = req.body;
     if (!clientId || !clientSecret || !socketId) {
@@ -60,10 +54,11 @@ app.post('/api/zoho/auth', (req, res) => {
     const authUrl = `https://accounts.zoho.com/oauth/v2/auth?scope=${combinedScopes}&client_id=${clientId.trim()}&response_type=code&access_type=offline&redirect_uri=${REDIRECT_URI}&prompt=consent&state=${state}`;
     res.json({ authUrl });
 });
+
 app.get('/api/zoho/callback', async (req, res) => {
     const { code, state } = req.query;
     const authData = authStates[state];
-    if (!authData) return res.status(400).send('<h1>Error</h1><p>Invalid or expired session state. Please try generating the token again.</p>');
+    if (!authData) return res.status(400).send('<h1>Error</h1><p>Invalid or expired session state.</p>');
     delete authStates[state];
     try {
         const tokenUrl = 'https://accounts.zoho.com/oauth/v2/token';
@@ -76,17 +71,16 @@ app.get('/api/zoho/callback', async (req, res) => {
         const axios = require('axios');
         const response = await axios.post(tokenUrl, params);
         const { refresh_token } = response.data;
-        if (!refresh_token) throw new Error('Refresh token not found in Zoho\'s response.');
+        if (!refresh_token) throw new Error('Refresh token not found.');
         io.to(authData.socketId).emit('zoho-refresh-token', { refreshToken: refresh_token });
-        res.send('<h1>Success!</h1><p>You can now close this window. The token has been sent to the application.</p><script>window.close();</script>');
+        res.send('<h1>Success!</h1><p>You can close this window.</p><script>window.close();</script>');
     } catch (error) {
         const { message } = parseError(error);
         io.to(authData.socketId).emit('zoho-refresh-token-error', { error: message });
-        res.status(500).send(`<h1>Error</h1><p>Failed to get token: ${message}. Please close this window and try again.</p>`);
+        res.status(500).send(`<h1>Error</h1><p>Failed to get token: ${message}.</p>`);
     }
 });
 
-// --- SINGLE TICKET AND INVOICE REST ENDPOINTS (No changes) ---
 app.post('/api/tickets/single', async (req, res) => {
     try {
         const result = await deskHandler.handleSendSingleTicket(req.body);
@@ -112,7 +106,6 @@ app.post('/api/invoices/single', async (req, res) => {
     }
 });
 
-// --- PROFILE MANAGEMENT API (CORRECTED WITH TRIMMING AND LOGGING) ---
 app.get('/api/profiles', async (req, res) => {
     try {
         const allProfiles = await getProfiles();
@@ -130,7 +123,6 @@ app.post('/api/profiles', async (req, res) => {
         if (!newProfile || !newProfile.profileName) {
             return res.status(400).json({ success: false, error: "Profile name is required." });
         }
-
         const createdProfile = await prisma.profile.create({
             data: {
                 profileName: newProfile.profileName.trim(),
@@ -144,7 +136,6 @@ app.post('/api/profiles', async (req, res) => {
                 inventoryOrgId: newProfile.inventory?.orgId?.trim(),
             }
         });
-        
         console.log('[SUCCESS] Profile created successfully:', createdProfile.profileName);
         res.json({ success: true, profile: createdProfile });
     } catch (error) {
@@ -156,14 +147,13 @@ app.post('/api/profiles', async (req, res) => {
     }
 });
 
-app.put('/api/profiles/:profileNameToUpdate', async (req, res) => {
-    const { profileNameToUpdate } = req.params;
-    console.log('[INFO] Received request to update profile:', profileNameToUpdate);
+app.put('/api/profiles/:id', async (req, res) => {
+    const { id } = req.params;
+    console.log('[INFO] Received request to update profile ID:', id);
     try {
         const updatedProfileData = req.body;
-
         const updatedProfile = await prisma.profile.update({
-            where: { profileName: profileNameToUpdate },
+            where: { id: parseInt(id, 10) },
             data: {
                 profileName: updatedProfileData.profileName.trim(),
                 clientId: updatedProfileData.clientId.trim(),
@@ -176,7 +166,6 @@ app.put('/api/profiles/:profileNameToUpdate', async (req, res) => {
                 inventoryOrgId: updatedProfileData.inventory?.orgId?.trim(),
             }
         });
-
         console.log('[SUCCESS] Profile updated successfully:', updatedProfile.profileName);
         res.json({ success: true, profile: updatedProfile });
     } catch (error) {
@@ -209,60 +198,8 @@ app.delete('/api/profiles/:profileNameToDelete', async (req, res) => {
     }
 });
 
-// --- SOCKET.IO CONNECTION HANDLING (No changes) ---
 io.on('connection', (socket) => {
     console.log(`[INFO] New connection. Socket ID: ${socket.id}`);
-
-    socket.on('checkApiStatus', async (data) => {
-        try {
-            const { selectedProfileName, service = 'desk' } = data;
-            const profiles = await getProfiles();
-            const activeProfile = profiles.find(p => p.profileName === selectedProfileName);
-            if (!activeProfile) throw new Error("Profile not found");
-            
-            await getValidAccessToken(activeProfile, service);
-
-            let validationData = {};
-            if (service === 'inventory') {
-                if (!activeProfile.inventory || !activeProfile.inventory.orgId) throw new Error('Inventory Organization ID is not configured for this profile.');
-                const orgsResponse = await makeApiCall('get', '/v1/organizations', null, activeProfile, 'inventory');
-                const currentOrg = orgsResponse.data.organizations.find(org => org.organization_id === activeProfile.inventory.orgId);
-                if (!currentOrg) throw new Error('Inventory Organization ID is invalid or does not match this profile.');
-                validationData = { agentInfo: { firstName: currentOrg.contact_name, lastName: '' }, orgName: currentOrg.name };
-            } else {
-                if (!activeProfile.desk || !activeProfile.desk.orgId) throw new Error('Desk Organization ID is not configured for this profile.');
-                const agentResponse = await makeApiCall('get', '/api/v1/myinfo', null, activeProfile, 'desk');
-                validationData = { agentInfo: agentResponse.data, orgName: agentResponse.data.orgName };
-            }
-
-            socket.emit('apiStatusResult', { 
-                success: true, 
-                message: `Connection to Zoho ${service.charAt(0).toUpperCase() + service.slice(1)} API is successful.`,
-                fullResponse: validationData
-            });
-        } catch (error) {
-            const { message, fullResponse } = parseError(error);
-            socket.emit('apiStatusResult', { success: false, message: `Connection failed: ${message}`, fullResponse });
-        }
-    });
-
-    socket.on('pauseJob', ({ profileName, jobType }) => {
-        const jobId = createJobId(socket.id, profileName, jobType);
-        if (activeJobs[jobId]) activeJobs[jobId].status = 'paused';
-    });
-    socket.on('resumeJob', ({ profileName, jobType }) => {
-        const jobId = createJobId(socket.id, profileName, jobType);
-        if (activeJobs[jobId]) activeJobs[jobId].status = 'running';
-    });
-    socket.on('endJob', ({ profileName, jobType }) => {
-        const jobId = createJobId(socket.id, profileName, jobType);
-        if (activeJobs[jobId]) activeJobs[jobId].status = 'ended';
-    });
-    socket.on('disconnect', () => {
-        Object.keys(activeJobs).forEach(jobId => {
-            if (jobId.startsWith(socket.id)) delete activeJobs[jobId];
-        });
-    });
 
     const deskListeners = {
         'startBulkCreate': deskHandler.handleStartBulkCreate,
@@ -305,11 +242,9 @@ io.on('connection', (socket) => {
     }
 });
 
-// --- CATCH-ALL ROUTE FOR FRONTEND ---
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, '../public/index.html'));
 });
-
 
 server.listen(port, () => {
     console.log(`🚀 Server is running on http://localhost:${port}`);

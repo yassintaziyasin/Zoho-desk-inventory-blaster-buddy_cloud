@@ -1,20 +1,13 @@
 const axios = require('axios');
 const { PrismaClient } = require('@prisma/client');
 
-// Create a single, shared instance of the Prisma Client
 const prisma = new PrismaClient();
 
-// --- NEW DATABASE FUNCTIONS ---
-
-/**
- * Fetches all profiles from the database.
- * @returns {Promise<Array>} A promise that resolves to an array of profiles.
- */
 async function getProfiles() {
     const profilesFromDb = await prisma.profile.findMany();
-    // The frontend expects desk and inventory properties to be objects.
-    // This function reshapes the flat data from the database into the nested structure the app needs.
+    // CORRECTED: Now includes the 'id' in the returned object
     return profilesFromDb.map(p => ({
+        id: p.id, // Add the id here
         profileName: p.profileName,
         clientId: p.clientId,
         clientSecret: p.clientSecret,
@@ -31,10 +24,6 @@ async function getProfiles() {
     }));
 }
 
-/**
- * Creates a new ticket log entry in the database.
- * @param {object} logData - The data for the ticket log.
- */
 async function createTicketLogEntry(logData) {
     await prisma.ticketLog.create({
         data: {
@@ -47,15 +36,9 @@ async function createTicketLogEntry(logData) {
     });
 }
 
-/**
- * Deletes all ticket log entries from the database.
- */
 async function clearAllTicketLogs() {
     await prisma.ticketLog.deleteMany({});
 }
-
-
-// --- EXISTING ZOHO HELPER FUNCTIONS (Unchanged, but important) ---
 
 const parseError = (error) => {
     let message = 'An unknown error occurred.';
@@ -118,7 +101,7 @@ const makeApiCall = async (method, url, data, profile, service = 'desk') => {
 const createJobId = (socketId, profileName, jobType) => `${socketId}-${profileName}-${jobType}`;
 
 module.exports = {
-    prisma, // Export prisma instance for use in other files
+    prisma,
     getProfiles,
     createTicketLogEntry,
     clearAllTicketLogs,
