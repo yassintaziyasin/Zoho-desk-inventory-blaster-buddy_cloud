@@ -141,9 +141,8 @@ const getValidAccessToken = async (profile, service) => {
             grant_type: 'refresh_token',
             scope: serviceScopes
         });
-        
-        const accountsUrl = process.env.ZOHO_ACCOUNTS_URL || 'https://accounts.zoho.com';
-        const response = await axios.post(`${accountsUrl}/oauth/v2/token`, params);
+
+        const response = await axios.post('https://accounts.zoho.com/oauth/v2/token', params);
         
         if (response.data.error) {
             throw new Error(response.data.error);
@@ -160,7 +159,6 @@ const getValidAccessToken = async (profile, service) => {
     }
 };
 
-//-------------------------------
 const makeApiCall = async (method, relativeUrl, data, profile, service) => {
     const tokenResponse = await getValidAccessToken(profile, service);
     const accessToken = tokenResponse.access_token;
@@ -174,8 +172,8 @@ const makeApiCall = async (method, relativeUrl, data, profile, service) => {
     }
 
     const baseUrls = {
-        desk: process.env.ZOHO_DESK_URL || 'https://desk.zoho.com',
-        inventory: process.env.ZOHO_INVENTORY_URL || 'https://www.zohoapis.com/inventory'
+        desk: 'https://desk.zoho.com',
+        inventory: 'https://www.zohoapis.com/inventory'
     };
     
     const baseUrl = baseUrls[service];

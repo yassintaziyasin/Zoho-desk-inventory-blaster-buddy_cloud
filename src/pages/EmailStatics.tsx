@@ -50,7 +50,7 @@ interface EmailStaticsProps {
   onEditProfile: (profile: Profile) => void;
 }
 
-const SERVER_URL = import.meta.env.PROD ? '' : "http://localhost:3000";
+const SERVER_URL = "http://localhost:3000";
 
 const EmailStatics: React.FC<EmailStaticsProps> = ({ onAddProfile, onEditProfile }) => {
   const { toast } = useToast();

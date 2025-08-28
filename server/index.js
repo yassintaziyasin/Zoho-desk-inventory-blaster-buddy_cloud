@@ -3,7 +3,6 @@ const http = require('http');
 const { Server } = require("socket.io");
 const cors = require('cors');
 const crypto = require('crypto');
-const path = require('path');
 const { readProfiles, addProfile, updateProfile, parseError, getValidAccessToken, makeApiCall, createJobId } = require('./utils');
 const deskHandler = require('./desk-handler');
 const inventoryHandler = require('./inventory-handler');
@@ -11,10 +10,10 @@ require('dotenv').config();
 
 const app = express();
 const server = http.createServer(app);
-const port = process.env.PORT || 3000;
+const io = new Server(server, { cors: { origin: process.env.CLIENT_URL || "http://localhost:8080" } });
 
-const clientOrigin = process.env.CLIENT_URL || "http://localhost:8080";
-const io = new Server(server, { cors: { origin: clientOrigin } });
+const port = process.env.PORT || 3000;
+const REDIRECT_URI = `http://localhost:${port}/api/zoho/callback`;
 
 const activeJobs = {};
 deskHandler.setActiveJobs(activeJobs);
@@ -24,10 +23,8 @@ const authStates = {};
 
 app.use(cors());
 app.use(express.json());
-app.set('trust proxy', 1);
 
-app.use(express.static(path.join(__dirname, '../dist')));
-
+// --- ZOHO AUTH FLOW ---
 app.post('/api/zoho/auth', (req, res) => {
     const { clientId, clientSecret, socketId } = req.body;
     if (!clientId || !clientSecret || !socketId) {
@@ -38,10 +35,6 @@ app.post('/api/zoho/auth', (req, res) => {
     authStates[state] = { clientId, clientSecret, socketId };
 
     setTimeout(() => delete authStates[state], 300000);
-
-    const protocol = req.protocol;
-    const host = req.get('host');
-    const REDIRECT_URI = `${protocol}://${host}/api/zoho/callback`;
 
     const combinedScopes = 'Desk.tickets.ALL,Desk.settings.ALL,Desk.basic.READ,ZohoInventory.contacts.ALL,ZohoInventory.invoices.ALL,ZohoInventory.settings.ALL,ZohoInventory.settings.UPDATE,ZohoInventory.settings.READ';
     const authUrl = `https://accounts.zoho.com/oauth/v2/auth?scope=${combinedScopes}&client_id=${clientId}&response_type=code&access_type=offline&redirect_uri=${REDIRECT_URI}&prompt=consent&state=${state}`;
@@ -56,10 +49,6 @@ app.get('/api/zoho/callback', async (req, res) => {
         return res.status(400).send('<h1>Error</h1><p>Invalid or expired session state. Please try generating the token again.</p>');
     }
     delete authStates[state];
-
-    const protocol = req.protocol;
-    const host = req.get('host');
-    const REDIRECT_URI = `${protocol}://${host}/api/zoho/callback`;
 
     try {
         const tokenUrl = 'https://accounts.zoho.com/oauth/v2/token';
@@ -88,6 +77,7 @@ app.get('/api/zoho/callback', async (req, res) => {
     }
 });
 
+// --- SINGLE TICKET AND INVOICE REST ENDPOINTS ---
 app.post('/api/tickets/single', async (req, res) => {
     try {
         const result = await deskHandler.handleSendSingleTicket(req.body);
@@ -115,6 +105,7 @@ app.post('/api/invoices/single', async (req, res) => {
     }
 });
 
+// --- PROFILE MANAGEMENT API ---
 app.get('/api/profiles', async (req, res) => {
     try {
         const allProfiles = await readProfiles();
@@ -159,9 +150,11 @@ app.put('/api/profiles/:profileNameToUpdate', async (req, res) => {
     }
 });
 
+// --- SOCKET.IO CONNECTION HANDLING ---
 io.on('connection', (socket) => {
     console.log(`[INFO] New connection. Socket ID: ${socket.id}`);
 
+    // --- GENERIC AND UTILITY LISTENERS ---
     socket.on('checkApiStatus', async (data) => {
         try {
             const { selectedProfileName, service = 'desk' } = data;
@@ -184,7 +177,7 @@ io.on('connection', (socket) => {
                     agentInfo: { firstName: currentOrg.contact_name, lastName: '' } 
                 };
 
-            } else {
+            } else { // Default to 'desk'
                 if (!activeProfile.desk || !activeProfile.desk.orgId) {
                     throw new Error('Desk Organization ID is not configured for this profile.');
                 }
@@ -231,6 +224,7 @@ io.on('connection', (socket) => {
         });
     });
 
+    // --- ZOHO DESK LISTENERS (delegated to desk-handler) ---
     const deskListeners = {
         'startBulkCreate': deskHandler.handleStartBulkCreate,
         'getEmailFailures': deskHandler.handleGetEmailFailures,
@@ -248,6 +242,7 @@ io.on('connection', (socket) => {
         });
     }
 
+    // --- ZOHO INVENTORY LISTENERS (delegated to inventory-handler) ---
     const inventoryListeners = {
         'startBulkInvoice': inventoryHandler.handleStartBulkInvoice,
         'getOrgDetails': inventoryHandler.handleGetOrgDetails,
@@ -265,9 +260,6 @@ io.on('connection', (socket) => {
     }
 });
 
-app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '../dist/index.html'));
-});
 
 server.listen(port, () => {
     console.log(`🚀 Server is running on http://localhost:${port}`);
