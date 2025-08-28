@@ -1,6 +1,12 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
+// Critical check: Ensure the DATABASE_URL environment variable is available.
+// The application will crash with a clear error if it's not set.
+if (!process.env.DATABASE_URL) {
+  throw new Error('FATAL ERROR: DATABASE_URL is not set in the environment.');
+}
+
 // Check if the environment is production (like on Zeabur)
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -72,6 +78,8 @@ const initializeDatabase = async () => {
     console.log('Database tables initialized successfully.');
   } catch (err) {
     console.error('Error initializing database:', err.stack);
+    // Re-throw the error to ensure the process exits if the database is unreachable
+    throw err;
   } finally {
     client.release();
   }
