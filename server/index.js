@@ -45,10 +45,9 @@ app.use(cors({ origin: frontendUrl }));
 app.use(express.json());
 
 // --- SERVE STATIC FRONTEND ---
-// This tells Express to serve the built React app from the 'public' folder
 app.use(express.static(path.join(__dirname, '../public')));
 
-// --- ZOHO AUTH FLOW (No changes needed here) ---
+// --- ZOHO AUTH FLOW (No changes) ---
 app.post('/api/zoho/auth', (req, res) => {
     const { clientId, clientSecret, socketId } = req.body;
     if (!clientId || !clientSecret || !socketId) {
@@ -58,7 +57,7 @@ app.post('/api/zoho/auth', (req, res) => {
     authStates[state] = { clientId, clientSecret, socketId };
     setTimeout(() => delete authStates[state], 300000);
     const combinedScopes = 'Desk.tickets.ALL,Desk.settings.ALL,Desk.basic.READ,ZohoInventory.contacts.ALL,ZohoInventory.invoices.ALL,ZohoInventory.settings.ALL,ZohoInventory.settings.UPDATE,ZohoInventory.settings.READ';
-    const authUrl = `https://accounts.zoho.com/oauth/v2/auth?scope=${combinedScopes}&client_id=${clientId}&response_type=code&access_type=offline&redirect_uri=${REDIRECT_URI}&prompt=consent&state=${state}`;
+    const authUrl = `https://accounts.zoho.com/oauth/v2/auth?scope=${combinedScopes}&client_id=${clientId.trim()}&response_type=code&access_type=offline&redirect_uri=${REDIRECT_URI}&prompt=consent&state=${state}`;
     res.json({ authUrl });
 });
 app.get('/api/zoho/callback', async (req, res) => {
@@ -87,7 +86,7 @@ app.get('/api/zoho/callback', async (req, res) => {
     }
 });
 
-// --- SINGLE TICKET AND INVOICE REST ENDPOINTS (No changes needed here) ---
+// --- SINGLE TICKET AND INVOICE REST ENDPOINTS (No changes) ---
 app.post('/api/tickets/single', async (req, res) => {
     try {
         const result = await deskHandler.handleSendSingleTicket(req.body);
@@ -113,7 +112,7 @@ app.post('/api/invoices/single', async (req, res) => {
     }
 });
 
-// --- PROFILE MANAGEMENT API (MODIFIED TO USE PRISMA) ---
+// --- PROFILE MANAGEMENT API (CORRECTED WITH TRIMMING AND LOGGING) ---
 app.get('/api/profiles', async (req, res) => {
     try {
         const allProfiles = await getProfiles();
@@ -125,6 +124,7 @@ app.get('/api/profiles', async (req, res) => {
 });
 
 app.post('/api/profiles', async (req, res) => {
+    console.log('[INFO] Received request to create profile:', req.body.profileName);
     try {
         const newProfile = req.body;
         if (!newProfile || !newProfile.profileName) {
@@ -133,90 +133,94 @@ app.post('/api/profiles', async (req, res) => {
 
         const createdProfile = await prisma.profile.create({
             data: {
-                profileName: newProfile.profileName,
-                clientId: newProfile.clientId,
-                clientSecret: newProfile.clientSecret,
-                refreshToken: newProfile.refreshToken,
-                deskOrgId: newProfile.desk?.orgId,
-                defaultDepartmentId: newProfile.desk?.defaultDepartmentId,
-                fromEmailAddress: newProfile.desk?.fromEmailAddress,
-                mailReplyAddressId: newProfile.desk?.mailReplyAddressId,
-                inventoryOrgId: newProfile.inventory?.orgId,
+                profileName: newProfile.profileName.trim(),
+                clientId: newProfile.clientId.trim(),
+                clientSecret: newProfile.clientSecret.trim(),
+                refreshToken: newProfile.refreshToken.trim(),
+                deskOrgId: newProfile.desk?.orgId?.trim(),
+                defaultDepartmentId: newProfile.desk?.defaultDepartmentId?.trim(),
+                fromEmailAddress: newProfile.desk?.fromEmailAddress?.trim(),
+                mailReplyAddressId: newProfile.desk?.mailReplyAddressId?.trim(),
+                inventoryOrgId: newProfile.inventory?.orgId?.trim(),
             }
         });
         
+        console.log('[SUCCESS] Profile created successfully:', createdProfile.profileName);
         res.json({ success: true, profile: createdProfile });
     } catch (error) {
-        // P2002 is Prisma's error code for a unique constraint violation (e.g., duplicate profileName)
+        console.error('[ERROR] Failed to add profile:', error);
         if (error.code === 'P2002') {
             return res.status(400).json({ success: false, error: "A profile with this name already exists." });
         }
-        console.error('[ERROR] Adding profile:', error);
         res.status(500).json({ success: false, error: "Failed to add profile to database." });
     }
 });
 
 app.put('/api/profiles/:profileNameToUpdate', async (req, res) => {
+    const { profileNameToUpdate } = req.params;
+    console.log('[INFO] Received request to update profile:', profileNameToUpdate);
     try {
-        const { profileNameToUpdate } = req.params;
         const updatedProfileData = req.body;
 
         const updatedProfile = await prisma.profile.update({
             where: { profileName: profileNameToUpdate },
             data: {
-                profileName: updatedProfileData.profileName,
-                clientId: updatedProfileData.clientId,
-                clientSecret: updatedProfileData.clientSecret,
-                refreshToken: updatedProfileData.refreshToken,
-                deskOrgId: updatedProfileData.desk?.orgId,
-                defaultDepartmentId: updatedProfileData.desk?.defaultDepartmentId,
-                fromEmailAddress: updatedProfileData.desk?.fromEmailAddress,
-                mailReplyAddressId: updatedProfileData.desk?.mailReplyAddressId,
-                inventoryOrgId: updatedProfileData.inventory?.orgId,
+                profileName: updatedProfileData.profileName.trim(),
+                clientId: updatedProfileData.clientId.trim(),
+                clientSecret: updatedProfileData.clientSecret.trim(),
+                refreshToken: updatedProfileData.refreshToken.trim(),
+                deskOrgId: updatedProfileData.desk?.orgId?.trim(),
+                defaultDepartmentId: updatedProfileData.desk?.defaultDepartmentId?.trim(),
+                fromEmailAddress: updatedProfileData.desk?.fromEmailAddress?.trim(),
+                mailReplyAddressId: updatedProfileData.desk?.mailReplyAddressId?.trim(),
+                inventoryOrgId: updatedProfileData.inventory?.orgId?.trim(),
             }
         });
 
+        console.log('[SUCCESS] Profile updated successfully:', updatedProfile.profileName);
         res.json({ success: true, profile: updatedProfile });
     } catch (error) {
+        console.error('[ERROR] Failed to update profile:', error);
         if (error.code === 'P2002') {
             return res.status(400).json({ success: false, error: "A profile with the new name already exists." });
         }
         if (error.code === 'P2025') {
              return res.status(404).json({ success: false, error: "Profile not found." });
         }
-        console.error('[ERROR] Updating profile:', error);
         res.status(500).json({ success: false, error: "Failed to update profile in database." });
     }
 });
 
 app.delete('/api/profiles/:profileNameToDelete', async (req, res) => {
+    const { profileNameToDelete } = req.params;
+    console.log('[INFO] Received request to delete profile:', profileNameToDelete);
     try {
-        const { profileNameToDelete } = req.params;
         await prisma.profile.delete({
             where: { profileName: profileNameToDelete }
         });
+        console.log('[SUCCESS] Profile deleted successfully:', profileNameToDelete);
         res.json({ success: true });
     } catch (error) {
+        console.error('[ERROR] Failed to delete profile:', error);
         if (error.code === 'P2025') {
              return res.status(404).json({ success: false, error: "Profile not found." });
         }
-        console.error('[ERROR] Deleting profile:', error);
         res.status(500).json({ success: false, error: "Failed to delete profile from database." });
     }
 });
 
-// --- SOCKET.IO CONNECTION HANDLING (MODIFIED TO USE PRISMA) ---
+// --- SOCKET.IO CONNECTION HANDLING (No changes) ---
 io.on('connection', (socket) => {
     console.log(`[INFO] New connection. Socket ID: ${socket.id}`);
 
     socket.on('checkApiStatus', async (data) => {
         try {
             const { selectedProfileName, service = 'desk' } = data;
-            const profiles = await getProfiles(); // Fetch from DB
+            const profiles = await getProfiles();
             const activeProfile = profiles.find(p => p.profileName === selectedProfileName);
             if (!activeProfile) throw new Error("Profile not found");
             
-            await getValidAccessToken(activeProfile, service); // This now implicitly tests the connection
+            await getValidAccessToken(activeProfile, service);
 
             let validationData = {};
             if (service === 'inventory') {
@@ -260,7 +264,6 @@ io.on('connection', (socket) => {
         });
     });
 
-    // --- ZOHO DESK LISTENERS ---
     const deskListeners = {
         'startBulkCreate': deskHandler.handleStartBulkCreate,
         'getEmailFailures': deskHandler.handleGetEmailFailures,
@@ -285,7 +288,6 @@ io.on('connection', (socket) => {
         });
     }
 
-    // --- ZOHO INVENTORY LISTENERS ---
     const inventoryListeners = {
         'startBulkInvoice': inventoryHandler.handleStartBulkInvoice,
         'getOrgDetails': inventoryHandler.handleGetOrgDetails,
@@ -304,8 +306,6 @@ io.on('connection', (socket) => {
 });
 
 // --- CATCH-ALL ROUTE FOR FRONTEND ---
-// This makes sure that if you refresh a page like /single-ticket, the server sends the main HTML file
-// and lets React Router handle the routing on the client-side.
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, '../public/index.html'));
 });
