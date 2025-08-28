@@ -3,6 +3,7 @@ const http = require('http');
 const { Server } = require("socket.io");
 const cors = require('cors');
 const crypto = require('crypto');
+const path = require('path');
 const { readProfiles, addProfile, updateProfile, parseError, getValidAccessToken, makeApiCall, createJobId } = require('./utils');
 const deskHandler = require('./desk-handler');
 const inventoryHandler = require('./inventory-handler');
@@ -10,10 +11,10 @@ require('dotenv').config();
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: process.env.CLIENT_URL || "http://localhost:8080" } });
-
 const port = process.env.PORT || 3000;
-const REDIRECT_URI = `http://localhost:${port}/api/zoho/callback`;
+
+const clientOrigin = process.env.CLIENT_URL || "http://localhost:8080";
+const io = new Server(server, { cors: { origin: clientOrigin } });
 
 const activeJobs = {};
 deskHandler.setActiveJobs(activeJobs);
@@ -23,22 +24,25 @@ const authStates = {};
 
 app.use(cors());
 app.use(express.json());
+app.set('trust proxy', 1);
 
-// --- ZOHO AUTH FLOW ---
+// --- API ROUTES ---
+// All API routes should be defined before serving static files.
+
+// ZOHO AUTH FLOW
 app.post('/api/zoho/auth', (req, res) => {
     const { clientId, clientSecret, socketId } = req.body;
     if (!clientId || !clientSecret || !socketId) {
         return res.status(400).send('Client ID, Client Secret, and Socket ID are required.');
     }
-
     const state = crypto.randomBytes(16).toString('hex');
     authStates[state] = { clientId, clientSecret, socketId };
-
     setTimeout(() => delete authStates[state], 300000);
-
+    const protocol = req.protocol;
+    const host = req.get('host');
+    const REDIRECT_URI = `${protocol}://${host}/api/zoho/callback`;
     const combinedScopes = 'Desk.tickets.ALL,Desk.settings.ALL,Desk.basic.READ,ZohoInventory.contacts.ALL,ZohoInventory.invoices.ALL,ZohoInventory.settings.ALL,ZohoInventory.settings.UPDATE,ZohoInventory.settings.READ';
     const authUrl = `https://accounts.zoho.com/oauth/v2/auth?scope=${combinedScopes}&client_id=${clientId}&response_type=code&access_type=offline&redirect_uri=${REDIRECT_URI}&prompt=consent&state=${state}`;
-    
     res.json({ authUrl });
 });
 
@@ -49,7 +53,9 @@ app.get('/api/zoho/callback', async (req, res) => {
         return res.status(400).send('<h1>Error</h1><p>Invalid or expired session state. Please try generating the token again.</p>');
     }
     delete authStates[state];
-
+    const protocol = req.protocol;
+    const host = req.get('host');
+    const REDIRECT_URI = `${protocol}://${host}/api/zoho/callback`;
     try {
         const tokenUrl = 'https://accounts.zoho.com/oauth/v2/token';
         const params = new URLSearchParams();
@@ -58,18 +64,14 @@ app.get('/api/zoho/callback', async (req, res) => {
         params.append('client_secret', authData.clientSecret);
         params.append('redirect_uri', REDIRECT_URI);
         params.append('grant_type', 'authorization_code');
-        
         const axios = require('axios');
         const response = await axios.post(tokenUrl, params);
         const { refresh_token } = response.data;
-
         if (!refresh_token) {
             throw new Error('Refresh token not found in Zoho\'s response.');
         }
-
         io.to(authData.socketId).emit('zoho-refresh-token', { refreshToken: refresh_token });
         res.send('<h1>Success!</h1><p>You can now close this window. The token has been sent to the application.</p><script>window.close();</script>');
-
     } catch (error) {
         const { message } = parseError(error);
         io.to(authData.socketId).emit('zoho-refresh-token-error', { error: message });
@@ -77,7 +79,7 @@ app.get('/api/zoho/callback', async (req, res) => {
     }
 });
 
-// --- SINGLE TICKET AND INVOICE REST ENDPOINTS ---
+// TICKET & INVOICE REST ENDPOINTS
 app.post('/api/tickets/single', async (req, res) => {
     try {
         const result = await deskHandler.handleSendSingleTicket(req.body);
@@ -86,7 +88,6 @@ app.post('/api/tickets/single', async (req, res) => {
         res.status(500).json({ success: false, error: 'An unexpected server error occurred.' });
     }
 });
-
 app.post('/api/tickets/verify', async (req, res) => {
     try {
         const result = await deskHandler.handleVerifyTicketEmail(req.body);
@@ -95,7 +96,6 @@ app.post('/api/tickets/verify', async (req, res) => {
         res.status(500).json({ success: false, error: 'An unexpected server error occurred.' });
     }
 });
-
 app.post('/api/invoices/single', async (req, res) => {
     try {
         const result = await inventoryHandler.handleSendSingleInvoice(req.body);
@@ -105,7 +105,7 @@ app.post('/api/invoices/single', async (req, res) => {
     }
 });
 
-// --- PROFILE MANAGEMENT API ---
+// PROFILE MANAGEMENT API
 app.get('/api/profiles', async (req, res) => {
     try {
         const allProfiles = await readProfiles();
@@ -114,7 +114,6 @@ app.get('/api/profiles', async (req, res) => {
         res.status(500).json({ message: "Could not load profiles." });
     }
 });
-
 app.post('/api/profiles', async (req, res) => {
     try {
         const newProfile = req.body;
@@ -131,7 +130,6 @@ app.post('/api/profiles', async (req, res) => {
         res.status(500).json({ success: false, error: "Failed to add profile." });
     }
 });
-
 app.put('/api/profiles/:profileNameToUpdate', async (req, res) => {
     try {
         const { profileNameToUpdate } = req.params;
@@ -150,11 +148,23 @@ app.put('/api/profiles/:profileNameToUpdate', async (req, res) => {
     }
 });
 
+// --- SERVE FRONTEND ---
+// Serve the static files from the React app
+app.use(express.static(path.join(__dirname, '../dist')));
+
+// The "catchall" handler: for any request that doesn't match one above,
+// send back React's index.html file.
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../dist/index.html'));
+});
+
+
 // --- SOCKET.IO CONNECTION HANDLING ---
 io.on('connection', (socket) => {
     console.log(`[INFO] New connection. Socket ID: ${socket.id}`);
 
-    // --- GENERIC AND UTILITY LISTENERS ---
+    // ... (rest of your socket.io code remains the same)
+    
     socket.on('checkApiStatus', async (data) => {
         try {
             const { selectedProfileName, service = 'desk' } = data;
@@ -224,7 +234,6 @@ io.on('connection', (socket) => {
         });
     });
 
-    // --- ZOHO DESK LISTENERS (delegated to desk-handler) ---
     const deskListeners = {
         'startBulkCreate': deskHandler.handleStartBulkCreate,
         'getEmailFailures': deskHandler.handleGetEmailFailures,
@@ -242,7 +251,6 @@ io.on('connection', (socket) => {
         });
     }
 
-    // --- ZOHO INVENTORY LISTENERS (delegated to inventory-handler) ---
     const inventoryListeners = {
         'startBulkInvoice': inventoryHandler.handleStartBulkInvoice,
         'getOrgDetails': inventoryHandler.handleGetOrgDetails,
