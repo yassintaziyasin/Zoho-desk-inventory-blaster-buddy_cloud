@@ -149,7 +149,8 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onS
             Enter the shared credentials and service-specific settings for this Zoho account.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit}>
+        {/* The change is happening below */}
+        <form>
           {/* --- SHARED SETTINGS --- */}
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4">
@@ -223,7 +224,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onS
 
           <DialogFooter className="pt-8">
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit">Save Profile</Button>
+            <Button type="button" onClick={() => onSave(formData, profile?.profileName)}>Save Profile</Button>
           </DialogFooter>
         </form>
       </DialogContent>
