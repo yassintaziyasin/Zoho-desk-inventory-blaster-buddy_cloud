@@ -1,61 +1,42 @@
 # Stage 1: Build the React Frontend
-# We use a specific Node.js version for consistency and name this stage 'builder'
+# This stage builds the static files for our user interface.
 FROM node:18-alpine AS builder
 WORKDIR /app
-
-# Copy package files and install dependencies to leverage Docker layer caching
 COPY package*.json ./
-COPY tsconfig.json ./
 RUN npm install
-
-# Copy the rest of the frontend source code
 COPY . .
-
-# Build the frontend application, creating a 'dist' folder with static files
 RUN npm run build
 
 
-# Stage 2: Build the Node.js Backend
-# This stage prepares the server and its dependencies
-FROM node:18-alpine AS server_builder
+# Stage 2: Prepare the Production Backend
+# This stage installs only the necessary production dependencies for the server.
+FROM node:18-alpine AS backend
 WORKDIR /app
-
-# Copy server package files and install only production dependencies
-COPY server/package*.json ./server/
-RUN cd server && npm install --only=production
-
-# Copy the Prisma schema and generate the Prisma Client
-COPY prisma ./prisma/
+COPY server/package*.json ./
+RUN npm install --only=production
+COPY server ./
+# This step is crucial: it generates the Prisma client needed to talk to the database.
 RUN npx prisma generate
-
-# Copy the server source code
-COPY server ./server/
 
 
 # Final Stage: Create the Production Image
-# This stage assembles the final, optimized image
+# This is the final, small image that will be deployed.
 FROM node:18-alpine
 WORKDIR /app
-
-# Set the Node environment to 'production' for performance
 ENV NODE_ENV=production
 
-# Copy backend dependencies from the server_builder stage
-COPY --from=server_builder /app/server/node_modules ./server/node_modules
+# Copy dependencies and the generated Prisma client from the 'backend' stage.
+COPY --from=backend /app/node_modules ./node_modules
+COPY --from=backend /app/prisma ./prisma
 
-# Copy the generated Prisma client from the server_builder stage
-COPY --from=server_builder /app/node_modules ./node_modules
-COPY --from=server_builder /app/prisma ./prisma/
-
-# Copy the built frontend static files from the 'builder' stage
-# The server will be configured to serve these files
+# Copy the built frontend static files from the 'builder' stage.
 COPY --from=builder /app/dist ./public
 
-# Copy the server source code
-COPY server ./server/
+# Copy the backend application code from the 'backend' stage.
+COPY --from=backend /app ./
 
-# Expose the port the server will run on
+# Expose the port the server runs on.
 EXPOSE 3000
 
-# The command to start the server when the container launches
-CMD ["node", "server/index.js"]
+# The command to start the server.
+CMD ["node", "index.js"]
