@@ -1,14 +1,21 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
-// Create a new pool instance. The library will automatically use the
-// DATABASE_URL environment variable from Zeabur if it exists.
-const pool = new Pool({
+// Check if the environment is production (like on Zeabur)
+const isProduction = process.env.NODE_ENV === 'production';
+
+// Configuration for the database connection
+const connectionConfig = {
   connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false
-  }
-});
+  // Add SSL configuration only in production
+  ...(isProduction && {
+    ssl: {
+      rejectUnauthorized: false
+    }
+  })
+};
+
+const pool = new Pool(connectionConfig);
 
 // Function to initialize the database schema
 const initializeDatabase = async () => {
