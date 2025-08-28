@@ -1,5 +1,4 @@
 # Stage 1: Build the React Frontend
-# This stage builds the static files for our user interface.
 FROM node:18-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
@@ -8,35 +7,36 @@ COPY . .
 RUN npm run build
 
 
-# Stage 2: Prepare the Production Backend
-# This stage installs only the necessary production dependencies for the server.
-FROM node:18-alpine AS backend
+# Stage 2: Prepare Production Node Modules
+# This stage installs all dependencies, including dev dependencies needed for Prisma
+FROM node:18-alpine AS deps
 WORKDIR /app
-COPY server/package*.json ./server/
-RUN cd server && npm install --only=production
-COPY server ./server
-# This step is crucial: it generates the Prisma client needed to talk to the database.
-RUN cd server && npx prisma generate
+COPY server/package*.json ./server/package.json
+COPY server/package-lock.json ./server/package-lock.json
+COPY server/prisma ./server/prisma
+RUN cd server && npm install
 
 
 # Final Stage: Create the Production Image
-# This is the final, small image that will be deployed.
 FROM node:18-alpine
 WORKDIR /app
 ENV NODE_ENV=production
 
-# Copy dependencies and the generated Prisma client from the 'backend' stage.
-COPY --from=backend /app/server/node_modules ./server/node_modules
-COPY --from=backend /app/server/prisma ./server/prisma
+# Copy the server's package.json
+COPY server/package.json ./server/package.json
 
-# Copy the built frontend static files from the 'builder' stage.
+# Copy production node_modules and the generated Prisma client from the 'deps' stage
+COPY --from=deps /app/server/node_modules ./server/node_modules
+COPY --from=deps /app/server/prisma ./server/prisma
+
+# Copy the built frontend static files from the 'builder' stage
 COPY --from=builder /app/dist ./public
 
-# Copy the backend application code from the 'backend' stage.
-COPY --from=backend /app/server ./server
+# Copy the backend application source code
+COPY server ./server
 
-# Expose the port the server runs on.
+# Expose the port the server runs on
 EXPOSE 3000
 
-# The command to start the server. This is the corrected line.
+# The command to start the server
 CMD ["node", "server/index.js"]
