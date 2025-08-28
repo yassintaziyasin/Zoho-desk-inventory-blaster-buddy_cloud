@@ -189,30 +189,30 @@ const MainApp = () => {
         setIsProfileModalOpen(true);
     };
     
-    const handleSaveProfile = async (profileData: Profile, originalProfileName?: string) => {
-        const isEditing = !!originalProfileName;
-        const url = isEditing ? `${SERVER_URL}/api/profiles/${encodeURIComponent(originalProfileName)}` : `${SERVER_URL}/api/profiles`;
-        const method = isEditing ? 'PUT' : 'POST';
+const handleSaveProfile = async (profileData: Profile, originalProfileName?: string) => {
+    const isEditing = !!originalProfileName;
+    // Remove trailing slash from SERVER_URL to prevent double slashes
+    const cleanServerUrl = SERVER_URL.replace(/\/$/, "");
+    const url = isEditing ? `${cleanServerUrl}/api/profiles/${encodeURIComponent(originalProfileName)}` : `${cleanServerUrl}/api/profiles`;
 
-        try {
-            const response = await fetch(url, {
-                method,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(profileData),
-            });
-            const result = await response.json();
-            if (result.success) {
-                toast({ title: `Profile ${isEditing ? 'updated' : 'added'} successfully!` });
-                queryClient.invalidateQueries({ queryKey: ['profiles'] });
-                setIsProfileModalOpen(false);
-            } else {
-                toast({ title: 'Error', description: result.error, variant: 'destructive' });
-            }
-        } catch (error) {
-            toast({ title: 'Error', description: 'Failed to save profile.', variant: 'destructive' });
+    try {
+        const response = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(profileData),
+        });
+        const result = await response.json();
+        if (result.success) {
+            toast({ title: `Profile ${isEditing ? 'updated' : 'added'} successfully!` });
+            queryClient.invalidateQueries({ queryKey: ['profiles'] });
+            setIsProfileModalOpen(false);
+        } else {
+            toast({ title: 'Error', description: result.error, variant: 'destructive' });
         }
-    };
-
+    } catch (error) {
+        toast({ title: 'Error', description: 'Failed to save profile.', variant: 'destructive' });
+    }
+};
     return (
         <>
             <BrowserRouter>
