@@ -17,7 +17,7 @@ import { InvoiceResult } from '@/components/dashboard/inventory/InvoiceResultsDi
 import { useJobTimer } from '@/hooks/useJobTimer';
 
 const queryClient = new QueryClient();
-const SERVER_URL = "http://localhost:3000";
+const SERVER_URL = "";
 
 // --- Interfaces ---
 export interface TicketFormData {

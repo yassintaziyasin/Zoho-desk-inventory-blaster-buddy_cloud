@@ -52,7 +52,7 @@ interface ZohoDashboardProps {
   onEditProfile: (profile: Profile) => void;
 }
 
-const SERVER_URL = "http://localhost:3000";
+const SERVER_URL = "";
 
 export const ZohoDashboard: React.FC<ZohoDashboardProps> = ({ jobs, setJobs, createInitialJobState, onAddProfile, onEditProfile, socket: socketProp }) => {
   const { toast } = useToast();

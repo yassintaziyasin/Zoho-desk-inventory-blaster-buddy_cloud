@@ -25,7 +25,7 @@ interface ZohoDashboardProps {
   onEditProfile: (profile: Profile) => void;
 }
 
-const SERVER_URL = "http://localhost:3000";
+const SERVER_URL = "";
 
 export const InvoiceDashboard: React.FC<ZohoDashboardProps> = ({ 
     jobs, 

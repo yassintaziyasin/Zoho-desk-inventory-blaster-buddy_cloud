@@ -26,7 +26,7 @@ interface SingleInvoiceProps {
   onEditProfile: (profile: Profile) => void;
 }
 
-const SERVER_URL = "http://localhost:3000";
+const SERVER_URL = "";
 let socket: Socket;
 
 // New component for the Image Insertion Dialog
