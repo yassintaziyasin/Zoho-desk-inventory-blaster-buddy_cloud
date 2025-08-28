@@ -1,3 +1,5 @@
+// In src/components/dashboard/ProfileModal.tsx
+
 import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -17,9 +19,8 @@ interface ProfileModalProps {
   socket: Socket | null;
 }
 
-const SERVER_URL = "http://localhost:3000";
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || "http://localhost:3000";
 
-// NEW: Define an initial empty state for the form
 const getInitialFormData = (): Profile => ({
   profileName: '',
   clientId: '',
@@ -45,7 +46,6 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onS
   useEffect(() => {
     if (isOpen) {
         if (profile) {
-            // If editing, merge the existing profile data with the full structure to ensure no fields are missing
             setFormData({
                 ...getInitialFormData(),
                 ...profile,
@@ -53,13 +53,11 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onS
                 inventory: { ...getInitialFormData().inventory, ...profile.inventory },
             });
         } else {
-            // If adding a new profile, start with a completely empty form
             setFormData(getInitialFormData());
         }
     }
   }, [profile, isOpen]);
 
-  // Listen for token from server via Socket.IO
   useEffect(() => {
     if (!socket || !isOpen) return;
 
@@ -88,7 +86,6 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onS
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // NEW: Handler for nested fields (Desk and Inventory)
   const handleNestedChange = (service: 'desk' | 'inventory', e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({

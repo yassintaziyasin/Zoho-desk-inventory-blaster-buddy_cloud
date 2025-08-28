@@ -1,3 +1,5 @@
+// In src/components/dashboard/inventory/InvoiceDashboard.tsx
+
 import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Socket } from 'socket.io-client';
@@ -25,7 +27,7 @@ interface ZohoDashboardProps {
   onEditProfile: (profile: Profile) => void;
 }
 
-const SERVER_URL = "http://localhost:3000";
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || "http://localhost:3000";
 
 export const InvoiceDashboard: React.FC<ZohoDashboardProps> = ({ 
     jobs, 
@@ -119,7 +121,6 @@ export const InvoiceDashboard: React.FC<ZohoDashboardProps> = ({
   
   useEffect(() => {
     fetchDisplayName();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProfileName, socket]);
 
   useEffect(() => {

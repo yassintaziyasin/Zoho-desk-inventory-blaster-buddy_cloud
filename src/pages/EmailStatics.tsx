@@ -1,3 +1,5 @@
+// In src/pages/EmailStatics.tsx
+
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { io, Socket } from 'socket.io-client';
@@ -50,7 +52,7 @@ interface EmailStaticsProps {
   onEditProfile: (profile: Profile) => void;
 }
 
-const SERVER_URL = "http://localhost:3000";
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || "http://localhost:3000";
 
 const EmailStatics: React.FC<EmailStaticsProps> = ({ onAddProfile, onEditProfile }) => {
   const { toast } = useToast();

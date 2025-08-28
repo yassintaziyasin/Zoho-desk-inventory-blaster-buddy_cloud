@@ -1,6 +1,6 @@
 // In server/inventory-handler.js
 
-const { makeApiCall, parseError, createJobId, readProfiles } = require('./utils');
+const { makeApiCall, parseError, createJobId } = require('./utils');
 
 let activeJobs = {};
 
@@ -70,7 +70,7 @@ const handleUpdateOrgDetails = async (socket, data) => {
             contact_name: displayName,
             email: organization.email,
             is_logo_uploaded: organization.is_logo_uploaded,
-            fiscal_year_start_month: monthMap[organization.fiscal_year_start_month],
+            fiscal_year_start_month: monthMap[organization.fiscal_year_start_month -1], // Adjusted index
             time_zone: organization.time_zone,
             language_code: organization.language_code,
             date_format: organization.date_format,
@@ -160,7 +160,6 @@ const handleStartBulkInvoice = async (socket, data) => {
                     console.log(`[INFO] Created new contact for ${email} with ID: ${contactId}`);
                 }
                 
-                // Fetch full contact details to get contact_person_id
                 const contactDetailsResponse = await makeApiCall('get', `/v1/contacts/${contactId}`, null, activeProfile, 'inventory');
                 const contact = contactDetailsResponse.data.contact;
                 if (Array.isArray(contact.contact_persons) && contact.contact_persons.length > 0) {
@@ -302,12 +301,11 @@ const handleStartBulkInvoice = async (socket, data) => {
     }
 };
 
-const handleSendSingleInvoice = async (data) => {
+const handleSendSingleInvoice = async (data, profiles) => {
     const { email, subject, body, selectedProfileName, sendCustomEmail, sendDefaultEmail } = data;
     if (!email || !subject || !body || !selectedProfileName) {
         return { success: false, error: 'Missing required fields.' };
     }
-    const profiles = readProfiles();
     const activeProfile = profiles.find(p => p.profileName === selectedProfileName);
     
     if (!activeProfile || !activeProfile.inventory) {
@@ -353,7 +351,6 @@ const handleSendSingleInvoice = async (data) => {
 
         const invoiceUrl = `/v1/invoices${sendDefaultEmail ? '?send=true' : ''}`;
         const invoiceResponse = await makeApiCall('post', invoiceUrl, invoiceData, activeProfile, 'inventory');
-        const invoiceId = invoiceResponse.data.invoice.invoice_id;
         fullResponse.invoice = invoiceResponse.data;
         
         if (sendCustomEmail) {
@@ -407,7 +404,6 @@ const handleGetInvoices = async (socket, data) => {
         const response = await makeApiCall('get', url, null, activeProfile, 'inventory');
         const invoices = response.data.invoices;
 
-        // Enrich invoices with customer email
         const enrichedInvoices = await Promise.all(invoices.map(async (invoice) => {
             if (invoice.customer_id) {
                 try {
@@ -417,7 +413,6 @@ const handleGetInvoices = async (socket, data) => {
                         email: contactResponse.data.contact.email
                     };
                 } catch (error) {
-                    // if contact fetch fails, return invoice without email
                     return invoice;
                 }
             }

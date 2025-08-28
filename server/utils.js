@@ -1,52 +1,79 @@
-const fs = require('fs');
-const path = require('path');
+// In server/utils.js
+
+const { Pool } = require('pg');
 const axios = require('axios');
 
-const PROFILES_PATH = path.join(__dirname, 'profiles.json');
-const TICKET_LOG_PATH = path.join(__dirname, 'ticket-log.json');
+// Zeabur will provide the DATABASE_URL environment variable automatically.
+// For local development, you'll need to set this yourself.
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
+  }
+});
+
 const tokenCache = {};
 
-const readProfiles = () => {
-    try {
-        if (fs.existsSync(PROFILES_PATH)) {
-            const data = fs.readFileSync(PROFILES_PATH);
-            return JSON.parse(data);
-        }
-    } catch (error) {
-        console.error('[ERROR] Could not read profiles.json:', error);
-    }
+// --- PROFILES MANAGEMENT ---
+
+const readProfiles = async () => {
+  try {
+    const result = await pool.query('SELECT * FROM profiles');
+    // Convert database rows to the nested structure the app expects
+    return result.rows.map(row => ({
+      profileName: row.profilename,
+      clientId: row.clientid,
+      clientSecret: row.clientsecret,
+      refreshToken: row.refreshtoken,
+      desk: {
+        orgId: row.deskorgid,
+        defaultDepartmentId: row.deskdepartmentid,
+        fromEmailAddress: row.deskfromemail,
+        mailReplyAddressId: row.deskmailreplyid,
+      },
+      inventory: {
+        orgId: row.inventoryorgid,
+      },
+    }));
+  } catch (error) {
+    console.error('[DB ERROR] Could not read profiles:', error);
     return [];
+  }
 };
 
-const writeProfiles = (profiles) => {
-    try {
-        fs.writeFileSync(PROFILES_PATH, JSON.stringify(profiles, null, 2));
-    } catch (error) {
-        console.error('[ERROR] Could not write to profiles.json:', error);
-    }
+const writeProfiles = async (profiles) => {
+    // This function is more complex now as it needs to handle updates and inserts.
+    // For simplicity, we will handle this in the API endpoints directly.
+    // This function can be a placeholder or removed.
+    console.log("Profile writing is now handled directly in the API endpoints.");
 };
 
-const readTicketLog = () => {
-    try {
-        if (fs.existsSync(TICKET_LOG_PATH)) {
-            const data = fs.readFileSync(TICKET_LOG_PATH);
-            return JSON.parse(data);
-        }
-    } catch (error) {
-        console.error('[ERROR] Could not read ticket-log.json:', error);
-    }
-    return [];
-};
 
-const writeToTicketLog = (newEntry) => {
-    const log = readTicketLog();
-    log.push(newEntry);
+// --- TICKET LOG MANAGEMENT ---
+
+const readTicketLog = async () => {
     try {
-        fs.writeFileSync(TICKET_LOG_PATH, JSON.stringify(log, null, 2));
+        const result = await pool.query('SELECT * FROM ticket_logs ORDER BY "createdAt" DESC');
+        return result.rows;
     } catch (error) {
-        console.error('[ERROR] Could not write to ticket-log.json:', error);
+        console.error('[DB ERROR] Could not read ticket-log:', error);
+        return [];
     }
-};
+}
+
+const writeToTicketLog = async (newEntry) => {
+    try {
+        const { ticketNumber, email } = newEntry;
+        await pool.query(
+            'INSERT INTO ticket_logs ("ticketNumber", email) VALUES ($1, $2)',
+            [ticketNumber, email]
+        );
+    } catch (error) {
+        console.error('[DB ERROR] Could not write to ticket-log:', error);
+    }
+}
+
+// --- JOB AND API UTILS (Unchanged) ---
 
 const createJobId = (socketId, profileName, jobType) => `${socketId}_${profileName}_${jobType}`;
 
@@ -107,11 +134,11 @@ const getValidAccessToken = async (profile, service) => {
         });
 
         const response = await axios.post('https://accounts.zoho.com/oauth/v2/token', params);
-        
+
         if (response.data.error) {
             throw new Error(response.data.error);
         }
-        
+
         const { expires_in } = response.data;
         tokenCache[cacheKey] = { data: response.data, expiresAt: now + ((expires_in - 60) * 1000) };
         return response.data;
@@ -139,25 +166,25 @@ const makeApiCall = async (method, relativeUrl, data, profile, service) => {
         desk: 'https://desk.zoho.com',
         inventory: 'https://www.zohoapis.com/inventory'
     };
-    
+
     const baseUrl = baseUrls[service];
     const fullUrl = `${baseUrl}${relativeUrl}`;
     const orgId = serviceConfig.orgId;
 
-    const headers = { 
+    const headers = {
         'Authorization': `Zoho-oauthtoken ${accessToken}`,
         ...(service === 'desk' && { 'orgId': orgId })
     };
 
     const params = service === 'inventory' ? { organization_id: orgId } : {};
-    
+
     return axios({ method, url: fullUrl, data, headers, params });
 };
 
 
 module.exports = {
     readProfiles,
-    writeProfiles,
+    writeProfiles, // We keep this export for now to avoid breaking other files
     readTicketLog,
     writeToTicketLog,
     createJobId,
