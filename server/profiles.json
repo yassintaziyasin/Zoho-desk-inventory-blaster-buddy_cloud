@@ -1,0 +1,32 @@
+[
+  {
+    "profileName": "Desl_inventory",
+    "clientId": "1000.95RCN5FQI647XCAOFOUVCGFFA29BTD",
+    "clientSecret": "cdbceb9e378752e248619186c39c243750c0de33b7",
+    "refreshToken": "1000.019e51cd07e59f701675a96edca1be24.3aaab24d87bdbaf8583b1c642fead448",
+    "desk": {
+      "orgId": "893141744",
+      "defaultDepartmentId": "1155803000000006907",
+      "fromEmailAddress": "support@clarckhelpednadi.zohodesk.com",
+      "mailReplyAddressId": "1155803000000349008"
+    },
+    "inventory": {
+      "orgId": "893893979"
+    }
+  },
+  {
+    "profileName": "Inventpry only",
+    "clientId": "1000.2A19WQ2XA0OCEAD3HRBF19Z20A4N2J",
+    "clientSecret": "e226690e453b68a699ef07ba22a63494084e533624",
+    "refreshToken": "1000.92455631e87aebf707b796e33940d29d.6ed02072c67818f7843aa95735152347",
+    "desk": {
+      "orgId": "",
+      "defaultDepartmentId": "",
+      "fromEmailAddress": "",
+      "mailReplyAddressId": ""
+    },
+    "inventory": {
+      "orgId": "897380445"
+    }
+  }
+]
