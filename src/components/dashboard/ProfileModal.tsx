@@ -8,8 +8,8 @@ import { Profile } from '@/App';
 import { Socket } from 'socket.io-client';
 import { KeyRound } from 'lucide-react';
 
-// This defines the server URL, which was missing from this file.
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || "http://localhost:3000";
+// CORRECTED: Make SERVER_URL dynamic for production
+const SERVER_URL = import.meta.env.PROD ? '' : (import.meta.env.VITE_SERVER_URL || "http://localhost:3000");
 
 interface ProfileModalProps {
     isOpen: boolean;
@@ -88,7 +88,6 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onS
             return;
         }
 
-        // Added for debugging
         console.log("Generating token with Socket ID:", socket.id);
 
         try {

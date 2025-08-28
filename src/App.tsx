@@ -17,9 +17,8 @@ import { InvoiceResult } from '@/components/dashboard/inventory/InvoiceResultsDi
 import { useJobTimer } from '@/hooks/useJobTimer';
 
 const queryClient = new QueryClient();
-// This now uses an environment variable for the server URL,
-// falling back to localhost for local development.
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || "http://localhost:3000";
+// CORRECTED: Make SERVER_URL dynamic for production
+const SERVER_URL = import.meta.env.PROD ? '' : (import.meta.env.VITE_SERVER_URL || "http://localhost:3000");
 
 // --- Interfaces ---
 export interface TicketFormData {
@@ -292,7 +291,6 @@ const MainApp = () => {
             const response = await fetch(`${SERVER_URL}/api/profiles/${encodeURIComponent(profileNameToDelete)}`, {
                 method: 'DELETE',
             });
-            // Changed to check response.ok as the new endpoint doesn't return a body on success
             if (response.ok) {
                 toast({ title: `Profile "${profileNameToDelete}" deleted successfully!` });
                 await queryClient.invalidateQueries({ queryKey: ['profiles'] });
