@@ -95,7 +95,7 @@ export const ProfileSelector: React.FC<ProfileSelectorProps> = ({
                   const isJobActive = job && job.isProcessing;
                   return (
                     <SelectItem 
-                      key={profile.profileName} 
+                      key={profile.id} // CORRECTED: Use the unique profile ID as the key
                       value={profile.profileName}
                       className="cursor-pointer hover:bg-accent focus:bg-accent"
                     >
